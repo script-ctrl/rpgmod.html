@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
 <meta charset="UTF-8">
-<title>Ассасин: диагональ, RPG-стиль</title>
+<title>Ассасин: таймлайн 3.0 с</title>
 <style>
   html, body { margin: 0; height: 100%; background: #0d0d10; overflow: hidden; font-family: monospace; color: #ccc; }
   #ui { position: absolute; top: 12px; left: 12px; z-index: 2; }
@@ -22,25 +22,20 @@
 <script type="module">
 import * as THREE from 'three';
 
-const CYCLE = 180;
-const TICK_MS = 50;
+const LEAD_IN = 0.6;          // сек: только зомби, до появления ассасина
+const DURATION = 3.0;         // сек: таймлайн ассасина из ТЗ
+const CYCLE = LEAD_IN + DURATION;
 
-// Диагональная расстановка: зомби стоят по диагонали, ассасин появляется справа-спереди
-const ZOMBIE_POS = [
-  new THREE.Vector3(-3.0, 0, -1.8),
-  new THREE.Vector3(-1.4, 0, -0.6),
-];
-const STRIKE_POINT = new THREE.Vector3(0.6, 0, 0.4);
-const ENTRY_POINT = new THREE.Vector3(5.0, 0, 3.2);
+const ZOMBIE_POS = [new THREE.Vector3(-2.4, 0, -1.6), new THREE.Vector3(-1.0, 0, -0.4)];
+const ASSASSIN_POS = new THREE.Vector3(0.4, 0, 0.2);
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x0d0d10);
 scene.fog = new THREE.Fog(0x0d0d10, 14, 28);
 
-// Камера сверху-справа под углом, как в изометрической RPG
 const camera = new THREE.PerspectiveCamera(36, innerWidth / innerHeight, 0.1, 100);
-camera.position.set(6.5, 5.5, 9);
-camera.lookAt(-0.6, 0.9, -0.2);
+camera.position.set(6.5, 5.0, 8.5);
+camera.lookAt(-0.6, 1.0, -0.2);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -50,29 +45,23 @@ document.body.appendChild(renderer.domElement);
 scene.add(new THREE.HemisphereLight(0xc8ccff, 0x151518, 1.0));
 const key = new THREE.DirectionalLight(0xffe2b8, 0.9);
 key.position.set(4, 8, 5);
-key.castShadow = true;
-key.shadow.mapSize.set(1024, 1024);
-key.shadow.camera.left = -8;
-key.shadow.camera.right = 8;
-key.shadow.camera.top = 8;
-key.shadow.camera.bottom = -8;
 scene.add(key);
 
-const ground = new THREE.Mesh(
-  new THREE.PlaneGeometry(60, 60),
-  new THREE.MeshLambertMaterial({ color: 0x1c1c21 })
-);
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(60, 60), new THREE.MeshLambertMaterial({ color: 0x1c1c21 }));
 ground.rotation.x = -Math.PI / 2;
-ground.receiveShadow = true;
 scene.add(ground);
 
-// Фигура из кубов с шарнирами
+// Фигура из кубов. Все материалы прозрачные, чтобы можно было растворять силуэт.
 function makeFigure(c) {
   const root = new THREE.Group();
-  const mat = col => new THREE.MeshLambertMaterial({ color: col });
+  const mats = [];
+  const mat = (col, opts = {}) => {
+    const m = new THREE.MeshLambertMaterial({ color: col, transparent: true, opacity: 1, ...opts });
+    mats.push(m);
+    return m;
+  };
   const box = (w, h, d, col) => {
     const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat(col));
-    m.castShadow = true;
     return m;
   };
 
@@ -86,9 +75,16 @@ function makeFigure(c) {
   body.position.y = 0.375;
   torso.add(body);
 
-  const head = box(0.5, 0.5, 0.5, c.head);
+  // Голова: группа для поворота, капюшон как дочерний элемент
+  const head = new THREE.Group();
   head.position.y = 0.95;
   torso.add(head);
+  const skull = box(0.5, 0.5, 0.5, c.head);
+  head.add(skull);
+
+  const hood = box(0.56, 0.3, 0.56, c.hood || c.body);
+  hood.position.y = 0.2;
+  head.add(hood);
 
   const shoulderL = new THREE.Group();
   shoulderL.position.set(-0.4, 0.7, 0);
@@ -118,23 +114,31 @@ function makeFigure(c) {
   legR.position.y = -0.39;
   hipR.add(legR);
 
-  root.userData = { hips, torso, shoulderL, shoulderR, hipL, hipR };
+  root.userData = { hips, torso, head, hood, shoulderL, shoulderR, hipL, hipR, mats };
   return root;
 }
 
-const assassin = makeFigure({ head: 0x2a1c14, body: 0x2b2b33, arm: 0x2b2b33, leg: 0x1a1a22 });
-const blade = new THREE.Mesh(
-  new THREE.BoxGeometry(0.06, 0.6, 0.04),
-  new THREE.MeshLambertMaterial({ color: 0xd0d4dc })
-);
-blade.position.set(0, -0.55, 0.12);
-assassin.userData.shoulderR.add(blade);
+const assassin = makeFigure({ head: 0x2a1c14, body: 0x2b2b33, hood: 0x1a1a22, arm: 0x2b2b33, leg: 0x1a1a22 });
+assassin.position.copy(ASSASSIN_POS);
 scene.add(assassin);
 
-const zombies = ZOMBIE_POS.map(() => makeFigure({ head: 0x4d7a3a, body: 0x2a7a7a, arm: 0x4d7a3a, leg: 0x2a2a7a }));
-zombies.forEach(z => scene.add(z));
+// Клинок: в руке, но в позе покоя спрятан за спиной
+const blade = new THREE.Mesh(
+  new THREE.BoxGeometry(0.06, 0.7, 0.04),
+  new THREE.MeshLambertMaterial({ color: 0xd0d4dc, emissive: 0x88ccff, emissiveIntensity: 0, transparent: true })
+);
+assassin.userData.shoulderR.add(blade);
+const BLADE_BACK = { p: new THREE.Vector3(0.12, 0.25, -0.3), r: new THREE.Euler(0.6, 0, -0.5) };
+const BLADE_HAND = { p: new THREE.Vector3(0, -0.6, 0.12), r: new THREE.Euler(0, 0, 0) };
 
-// Пыль от скорости и падений
+const zombies = ZOMBIE_POS.map(() => makeFigure({ head: 0x4d7a3a, body: 0x2a7a7a, arm: 0x4d7a3a, leg: 0x2a2a7a }));
+zombies.forEach((z, i) => {
+  z.position.copy(ZOMBIE_POS[i]);
+  z.rotation.y = Math.PI * 0.25;
+  scene.add(z);
+});
+
+// Пыль
 const dust = [];
 const dustGeo = new THREE.BoxGeometry(1, 1, 1);
 function spawnDust(pos, count, spread) {
@@ -142,16 +146,10 @@ function spawnDust(pos, count, spread) {
     const m = new THREE.Mesh(dustGeo, new THREE.MeshBasicMaterial({ color: 0x8a8a92, transparent: true, opacity: 0.6 }));
     const s = 0.05 + Math.random() * 0.08;
     m.scale.setScalar(s);
-    m.position.set(
-      pos.x + (Math.random() - 0.5) * spread,
-      0.05 + Math.random() * 0.1,
-      pos.z + (Math.random() - 0.5) * spread
-    );
+    m.position.set(pos.x + (Math.random() - 0.5) * spread, 0.05 + Math.random() * 0.1, pos.z + (Math.random() - 0.5) * spread);
     m.userData = {
       v: new THREE.Vector3((Math.random() - 0.5) * 0.05, 0.02 + Math.random() * 0.05, (Math.random() - 0.5) * 0.05),
-      life: 24 + Math.floor(Math.random() * 14),
-      maxLife: 38,
-      s
+      life: 24 + Math.floor(Math.random() * 14), maxLife: 38, s
     };
     scene.add(m);
     dust.push(m);
@@ -160,82 +158,107 @@ function spawnDust(pos, count, spread) {
 
 const clamp = v => Math.max(0, Math.min(1, v));
 const easeOut = k => 1 - Math.pow(1 - k, 3);
-const easeIn = k => k * k * k;
+const easeInOut = k => (k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2);
+const lerp = (a, b, k) => a + (b - a) * k;
 
-function pose(p, { crouch = 0, lean = 0, armBack = 0, armFront = 0, legSwing = 0 } = {}) {
+function setPose(p, { crouch = 0, lean = 0, armR = 0, armL = 0 } = {}) {
   const u = p.userData;
   u.hips.position.y = 0.78 - 0.4 * crouch;
   u.torso.rotation.x = lean;
-  u.hipL.rotation.x = -1.5 * crouch + legSwing;
-  u.hipR.rotation.x = -1.5 * crouch - legSwing;
-  u.shoulderL.rotation.x = armFront;
-  u.shoulderR.rotation.x = armBack;
+  u.hipL.rotation.x = -1.5 * crouch;
+  u.hipR.rotation.x = -1.5 * crouch;
+  u.shoulderL.rotation.x = armL;
+  u.shoulderR.rotation.x = armR;
 }
 
-// Зомби падают назад, каждый в свою сторону, с задержкой
-const FALL_TICK = [96, 102];
-const FALL_DIR = [1, -1];
+function setOpacity(p, o) {
+  p.userData.mats.forEach(m => { m.opacity = o; });
+}
 
-function applyFrame(t) {
-  // Зомби стоят по диагонали, покачиваются, затем падают
+// Зомби стоят, покачиваются; умирают на 1.7 с ассасина
+const ZOMBIE_DEATH = 1.7;
+function applyZombies(t, a) {
   zombies.forEach((z, i) => {
-    const base = ZOMBIE_POS[i];
-    z.position.copy(base);
+    const sway = Math.sin(t * 2 + i * 2) * 0.04;
+    setPose(z, { armR: sway, armL: -sway });
+    z.position.copy(ZOMBIE_POS[i]);
+    z.position.y = 0;
     z.rotation.set(0, Math.PI * 0.25, 0);
-    z.visible = true;
-    const sway = Math.sin(t * 0.2 + i * 2) * 0.04;
-    pose(z, { armFront: sway, armBack: -sway });
-
-    if (t >= FALL_TICK[i]) {
-      const k = easeOut(clamp((t - FALL_TICK[i]) / 14));
-      z.rotation.z = (Math.PI / 2) * k * FALL_DIR[i] * 0.95;
+    if (a >= ZOMBIE_DEATH) {
+      const k = easeOut(clamp((a - ZOMBIE_DEATH) / 0.4));
+      z.rotation.z = (Math.PI / 2) * k * (i === 0 ? 1 : -1) * 0.95;
       z.position.y = 0.4 * k;
-      if (t === FALL_TICK[i] + 2) spawnDust(base, 8, 0.8);
     }
   });
-
-  // Ассасин: появляется резко (телепорт с первого тика), затем рывок через зомби
-  assassin.visible = t < 150;
-  assassin.rotation.set(0, 0, 0);
-  if (!assassin.visible) return;
-
-  if (t < 2) {
-    assassin.position.copy(ENTRY_POINT);
-    pose(assassin, { crouch: 0.85, lean: 0.4 });
-    return;
-  }
-
-  if (t < 30) {
-    // Рывок от входной точки к точке удара, низко, с наклоном и взмахом
-    const k = clamp((t - 2) / 28);
-    const e = easeIn(k);
-    assassin.position.lerpVectors(ENTRY_POINT, STRIKE_POINT, e);
-    const run = Math.sin(t * 0.9) * 0.5;
-    pose(assassin, { crouch: 0.85, lean: 0.4, armBack: 0.8 + run, armFront: -0.6 - run, legSwing: run * 0.8 });
-    if (t % 2 === 0) spawnDust(assassin.position, 3, 0.7);
-    return;
-  }
-
-  if (t < 60) {
-    // Торможение у точки удара
-    const k = clamp((t - 30) / 30);
-    const brake = easeOut(k);
-    assassin.position.copy(STRIKE_POINT);
-    pose(assassin, { crouch: 0.85 * (1 - brake * 0.3), lean: 0.4 * (1 - brake), armBack: 0.8 * (1 - brake), armFront: -0.6 * (1 - brake) });
-    if (t === 35 || t === 45) spawnDust(STRIKE_POINT, 10, 1.2);
-    return;
-  }
-
-  // Idle в приседе с клинком
-  const idle = Math.sin(t * 0.08) * 0.03;
-  assassin.position.copy(STRIKE_POINT);
-  pose(assassin, { crouch: 0.6, lean: 0.25 + idle, armBack: 0.5, armFront: -0.2 });
 }
 
-let tick = 0;
+// Ассасин по таймлайну из ТЗ. a = секунды от появления.
+function applyAssassin(a) {
+  if (a < 0) { assassin.visible = false; return; }
+  assassin.visible = true;
+  assassin.position.copy(ASSASSIN_POS);
+  assassin.rotation.set(0, 0, 0);
+  const u = assassin.userData;
+
+  // 0.0–0.8: поворот головы к зрителю, капюшон на голове
+  if (a < 0.8) {
+    u.head.rotation.y = lerp(Math.PI * 0.6, 0, easeOut(clamp(a / 0.8)));
+    setPose(assassin, { crouch: 0.5, lean: 0.2 });
+    u.hood.position.y = 0.2;
+    blade.position.copy(BLADE_BACK.p);
+    blade.rotation.copy(BLADE_BACK.r);
+    blade.material.emissiveIntensity = 0;
+    setOpacity(assassin, 1);
+    return;
+  }
+
+  // 0.8–1.4: клинок выходит из-за спины в руку
+  if (a < 1.4) {
+    u.head.rotation.y = 0;
+    const k = easeInOut(clamp((a - 0.8) / 0.6));
+    blade.position.lerpVectors(BLADE_BACK.p, BLADE_HAND.p, k);
+    blade.rotation.set(lerp(BLADE_BACK.r.x, 0, k), 0, lerp(BLADE_BACK.r.z, 0, k));
+    setPose(assassin, { crouch: 0.5, lean: 0.2, armR: lerp(-0.2, 0.2, k) });
+    return;
+  }
+
+  // 1.4–2.0: быстрый росчерк у плеча, вспышка лезвия пиком на 1.7 с
+  if (a < 2.0) {
+    const k = easeInOut(clamp((a - 1.4) / 0.6));
+    setPose(assassin, { crouch: 0.5, lean: 0.2, armR: lerp(0.2, 1.1, k) });
+    blade.position.copy(BLADE_HAND.p);
+    blade.rotation.set(0, 0, 0);
+    const flash = Math.max(0, 1 - Math.abs(a - 1.7) / 0.18);
+    blade.material.emissiveIntensity = flash * 1.5;
+    return;
+  }
+
+  // 2.0–2.6: капюшон опускается, силуэт растворяется в тени
+  if (a < 2.6) {
+    const k = easeInOut(clamp((a - 2.0) / 0.6));
+    setPose(assassin, { crouch: 0.5, lean: 0.2, armR: lerp(1.1, 0.2, k) });
+    u.hood.position.y = lerp(0.2, -0.05, k);
+    blade.material.emissiveIntensity = 0;
+    const bump = Math.sin(k * Math.PI);
+    setOpacity(assassin, 1 - 0.7 * bump);
+    return;
+  }
+
+  // 2.6–3.0: возврат в исходную позу, клинок прячется
+  const k = easeInOut(clamp((a - 2.6) / 0.4));
+  u.hood.position.y = lerp(-0.05, 0.2, k);
+  u.head.rotation.y = 0;
+  setPose(assassin, { crouch: 0.5, lean: 0.2, armR: lerp(0.2, 0, k) });
+  blade.position.lerpVectors(BLADE_HAND.p, BLADE_BACK.p, k);
+  blade.rotation.set(lerp(0, BLADE_BACK.r.x, k), 0, lerp(0, BLADE_BACK.r.z, k));
+  setOpacity(assassin, 1);
+}
+
+let tick = 0;          // секунды внутри цикла
 let paused = false;
 const speeds = [0.5, 1, 2];
 let speedIdx = 1;
+let prevA = -Infinity;
 
 document.getElementById('play').onclick = e => {
   paused = !paused;
@@ -250,18 +273,29 @@ let last = performance.now();
 
 function loop(now) {
   requestAnimationFrame(loop);
-  const dt = now - last;
+  const dt = (now - last) / 1000;
   last = now;
   if (!paused) {
-    tick += (dt / TICK_MS) * speeds[speedIdx];
+    tick += dt * speeds[speedIdx];
     if (tick >= CYCLE) {
       tick -= CYCLE;
+      prevA = -Infinity;
       dust.forEach(d => scene.remove(d));
       dust.length = 0;
     }
   }
 
-  applyFrame(tick);
+  const a = tick - LEAD_IN;
+  applyZombies(tick, a);
+  applyAssassin(a);
+
+  // Пыль в момент появления, на рывке-росчерке и при падении зомби
+  if (prevA < 0 && a >= 0) spawnDust(ASSASSIN_POS, 8, 1.0);
+  if (prevA < 1.4 && a >= 1.4) spawnDust(ASSASSIN_POS, 4, 0.6);
+  if (prevA < ZOMBIE_DEATH && a >= ZOMBIE_DEATH) {
+    zombies.forEach((z, i) => spawnDust(ZOMBIE_POS[i], 8, 0.8));
+  }
+  prevA = a;
 
   for (let i = dust.length - 1; i >= 0; i--) {
     const d = dust[i];
@@ -279,7 +313,7 @@ function loop(now) {
     }
   }
 
-  document.getElementById('info').textContent = `тик: ${Math.floor(tick)} / ${CYCLE}`;
+  document.getElementById('info').textContent = `t = ${tick.toFixed(2)} с   ассасин: ${Math.max(0, a).toFixed(2)} с`;
   renderer.render(scene, camera);
 }
 requestAnimationFrame(loop);
