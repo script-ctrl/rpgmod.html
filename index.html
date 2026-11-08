@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
 <meta charset="UTF-8">
-<title>Ассасин: превью тайминга</title>
+<title>Ассасин: превью тайминга v2</title>
 <style>
   html, body { margin: 0; height: 100%; background: #111; overflow: hidden; font-family: monospace; color: #ccc; }
   #ui { position: absolute; top: 12px; left: 12px; z-index: 2; }
@@ -23,79 +23,105 @@
 import * as THREE from 'three';
 
 const CYCLE = 160;
-const SCALE = 1; // 1 блок = 1 единица Three.js
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x1a1a1e);
+scene.fog = new THREE.Fog(0x1a1a1e, 14, 26);
 
 const camera = new THREE.PerspectiveCamera(40, innerWidth / innerHeight, 0.1, 100);
 camera.position.set(0, 2.2, 9);
 camera.lookAt(0, 1, 0);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.setSize(innerWidth, innerHeight);
 document.body.appendChild(renderer.domElement);
 
-scene.add(new THREE.AmbientLight(0xffffff, 0.8));
-const dir = new THREE.DirectionalLight(0xffffff, 0.6);
+scene.add(new THREE.HemisphereLight(0xddddff, 0x222226, 1.0));
+const dir = new THREE.DirectionalLight(0xffffff, 0.7);
 dir.position.set(3, 6, 5);
 scene.add(dir);
 
 const ground = new THREE.Mesh(
-  new THREE.PlaneGeometry(40, 40),
+  new THREE.PlaneGeometry(60, 60),
   new THREE.MeshLambertMaterial({ color: 0x222226 })
 );
 ground.rotation.x = -Math.PI / 2;
 scene.add(ground);
 
-// Собираем персонажа из кубов. Pivot: (0,0,0) - точка стояния на земле.
-function makeHumanoid(colors) {
+// Персонаж из кубов. Группа стоит на (0,0,0). Ноги и руки висят на шарнирах у бёдер и плеч.
+function makeHumanoid(c) {
   const root = new THREE.Group();
-  const mat = c => new THREE.MeshLambertMaterial({ color: c });
+  const mat = col => new THREE.MeshLambertMaterial({ color: col });
 
-  const body = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.75, 0.3), mat(colors.body));
-  body.position.y = 1.15;
-  root.add(body);
+  // Таз (центр корпуса тут не нужен: вращаем весь корпус вокруг таза)
+  const hips = new THREE.Group();
+  hips.position.y = 0.75;
+  root.add(hips);
 
-  const head = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.5), mat(colors.head));
-  head.position.y = 1.85;
-  root.add(head);
+  const torso = new THREE.Group();
+  torso.position.y = 0; // верх корпуса отсчитывается от таза
+  hips.add(torso);
 
-  const armL = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.7, 0.2), mat(colors.arm));
-  armL.position.set(-0.4, 1.1, 0);
-  root.add(armL);
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.75, 0.3), mat(c.body));
+  body.position.y = 0.375;
+  torso.add(body);
 
+  const head = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.5), mat(c.head));
+  head.position.y = 0.95;
+  torso.add(head);
+
+  const shoulderL = new THREE.Group();
+  shoulderL.position.set(-0.4, 0.7, 0);
+  torso.add(shoulderL);
+  const armL = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.7, 0.2), mat(c.arm));
+  armL.position.y = -0.35;
+  shoulderL.add(armL);
+
+  const shoulderR = new THREE.Group();
+  shoulderR.position.set(0.4, 0.7, 0);
+  torso.add(shoulderR);
   const armR = armL.clone();
-  armR.position.x = 0.4;
-  root.add(armR);
+  armR.position.y = -0.35;
+  shoulderR.add(armR);
 
-  const legL = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.75, 0.22), mat(colors.leg));
-  legL.position.set(-0.15, 0.375, 0);
-  root.add(legL);
+  const hipL = new THREE.Group();
+  hipL.position.set(-0.15, 0, 0);
+  hips.add(hipL);
+  const legL = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.75, 0.22), mat(c.leg));
+  legL.position.y = -0.375;
+  hipL.add(legL);
 
+  const hipR = new THREE.Group();
+  hipR.position.set(0.15, 0, 0);
+  hips.add(hipR);
   const legR = legL.clone();
-  legR.position.x = 0.15;
-  root.add(legR);
+  legR.position.y = -0.375;
+  hipR.add(legR);
 
-  root.userData = { body, head, armL, armR, legL, legR };
+  root.userData = { hips, torso, head, shoulderL, shoulderR, hipL, hipR };
   return root;
 }
 
 const steve = makeHumanoid({ head: 0x3a2a1e, body: 0xb08a2a, arm: 0xb08a2a, leg: 0x3a3ab0 });
 const zombieA = makeHumanoid({ head: 0x4d7a3a, body: 0x2a7a7a, arm: 0x4d7a3a, leg: 0x2a2a7a });
-const zombieB = zombieA.clone();
-zombieB.traverse(o => { if (o.isMesh) o.material = o.material.clone(); });
+const zombieB = makeHumanoid({ head: 0x4d7a3a, body: 0x2a7a7a, arm: 0x4d7a3a, leg: 0x2a2a7a });
 scene.add(steve, zombieA, zombieB);
 
-// Пыль
+// Пыль: частицы разного размера, разлетаются и уменьшаются
 const dust = [];
-const dustGeo = new THREE.BoxGeometry(0.08, 0.08, 0.08);
-const dustMat = new THREE.MeshBasicMaterial({ color: 0x888888, transparent: true, opacity: 0.7 });
-function spawnDust(x, y, z, count) {
+const dustGeo = new THREE.BoxGeometry(1, 1, 1);
+function spawnDust(x, y, z, count, spread = 0.4) {
   for (let i = 0; i < count; i++) {
-    const m = new THREE.Mesh(dustGeo, dustMat.clone());
-    m.position.set(x + (Math.random() - 0.5) * 0.4, y + Math.random() * 0.3, z + (Math.random() - 0.5) * 0.4);
-    m.userData.v = new THREE.Vector3((Math.random() - 0.5) * 0.05, Math.random() * 0.06, (Math.random() - 0.5) * 0.05);
-    m.userData.life = 30;
+    const m = new THREE.Mesh(dustGeo, new THREE.MeshBasicMaterial({ color: 0x8a8a8a, transparent: true, opacity: 0.7 }));
+    const s = 0.05 + Math.random() * 0.08;
+    m.scale.setScalar(s);
+    m.position.set(x + (Math.random() - 0.5) * spread, y + Math.random() * 0.1, z + (Math.random() - 0.5) * spread);
+    m.userData = {
+      v: new THREE.Vector3((Math.random() - 0.5) * 0.08, 0.02 + Math.random() * 0.06, (Math.random() - 0.5) * 0.08),
+      life: 25 + Math.floor(Math.random() * 15),
+      maxLife: 40,
+      s
+    };
     scene.add(m);
     dust.push(m);
   }
@@ -104,43 +130,101 @@ function spawnDust(x, y, z, count) {
 const clamp = v => Math.max(0, Math.min(1, v));
 const easeOut = k => 1 - Math.pow(1 - k, 3);
 const easeIn = k => k * k * k;
+const easeInOut = k => (k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2);
 
-// Та же логика, что renderAssassin
-function applyFrame(t) {
-  zombieA.visible = zombieB.visible = t < 150;
-  zombieA.position.set(-1.1, 0, 0);
-  zombieB.position.set(1.1, 0, 0);
-  zombieA.rotation.set(0, 0, 0);
-  zombieB.rotation.set(0, 0, 0);
-  if (t >= 60 && t < 150) {
-    const roll = (Math.PI / 2) * easeOut(clamp((t - 60) / 12));
-    zombieA.rotation.z = roll;
-    zombieB.rotation.z = roll;
-  }
+// Поза приседа: бёдра опущены, колени согнуты, корпус наклонён вперёд
+function setCrouch(p, amount = 1) {
+  const u = p.userData;
+  u.hips.position.y = 0.75 - 0.45 * amount;
+  u.torso.rotation.x = 0.35 * amount;
+  u.hipL.rotation.x = -1.6 * amount;
+  u.hipR.rotation.x = -1.6 * amount;
+  u.shoulderL.rotation.x = -0.5 * amount;
+  u.shoulderR.rotation.x = 0.2 * amount;
+}
 
+function setStand(p) {
+  const u = p.userData;
+  u.hips.position.y = 0.75;
+  u.torso.rotation.x = 0;
+  u.hipL.rotation.x = 0;
+  u.hipR.rotation.x = 0;
+  u.shoulderL.rotation.x = 0;
+  u.shoulderR.rotation.x = 0;
+  u.hips.rotation.set(0, 0, 0);
+}
+
+// Падение зомби на бок: группа вращается вокруг нижнего края, поэтому тело ложится на землю
+function setFallen(z, k) {
+  z.rotation.z = (Math.PI / 2) * k;
+  z.position.x = z.userData.baseX + (-0.45 * k) * (z.userData.baseX < 0 ? -1 : 1) * 0;
+  z.position.y = 0.3 * k * (1 - k) * 0 + (0.5 * k);
+}
+
+// Отскок при приземлении: быстрое падение, касание, короткий отскок
+function landingY(k) {
+  if (k < 0.7) return 2.0 * (1 - easeIn(k / 0.7));
+  const b = (k - 0.7) / 0.3;
+  return Math.sin(b * Math.PI) * 0.15;
+}
+
+function applyFrame(t, phase) {
+  // Зомби
+  const zombies = [zombieA, zombieB];
+  const baseX = [-1.1, 1.1];
+  zombies.forEach((z, i) => {
+    z.userData.baseX = baseX[i];
+    z.position.set(baseX[i], 0, 0);
+    z.rotation.set(0, 0, 0);
+    setStand(z);
+    z.visible = t < 150;
+    if (t >= 60 && t < 150) {
+      const k = easeOut(clamp((t - 60) / 12));
+      z.rotation.z = (Math.PI / 2) * k * (i === 0 ? -1 : 1);
+      z.position.y = 0.45 * k;
+    }
+    // Покачивание рук во время стойки
+    const sway = Math.sin(t * 0.25 + i) * 0.05;
+    z.userData.shoulderL.rotation.x = sway;
+    z.userData.shoulderR.rotation.x = -sway;
+  });
+
+  // Steve
   steve.visible = t >= 30 && t < 90;
   steve.position.set(0, 0, 0);
-  if (steve.visible) {
-    const crouch = t < 45 ? 0.5 : 0.5;
-    if (t < 45) steve.position.y = 2.0 * (1 - easeOut(clamp((t - 30) / 15)));
-    if (t >= 75) steve.position.x = -8 * easeIn(clamp((t - 75) / 15));
-    // присед: колени согнуты, корпус чуть вниз
-    steve.userData.legL.rotation.x = -0.9;
-    steve.userData.legR.rotation.x = -0.9;
-    steve.userData.body.position.y = 0.95;
-    steve.userData.head.position.y = 1.65;
-    steve.userData.armL.position.y = 0.9;
-    steve.userData.armR.position.y = 0.9;
-    steve.userData.legL.position.y = 0.3;
-    steve.userData.legR.position.y = 0.3;
+  steve.rotation.set(0, 0, 0);
+  if (!steve.visible) return;
+
+  if (t < 45) {
+    // Прыжок вниз с высоты, приземление с отскоком
+    const k = clamp((t - 30) / 15);
+    steve.position.y = landingY(k);
+    setCrouch(steve, t < 37 ? 0 : clamp((t - 37) / 8));
+    if (t >= 43 && t < 44) spawnDust(0, 0, 0, 14, 0.8);
+    return;
   }
-  if (t >= 43 && t < 44 && steve.visible) spawnDust(0, 0, 0, 12);
-  if (t >= 75 && t < 90 && t % 2 === 0) spawnDust(steve.position.x + 0.6, 0.1, 0, 2);
+
+  if (t < 75) {
+    setCrouch(steve, 1);
+    return;
+  }
+
+  // Рывок: наклон корпуса вперёд, ноги в беге, пыль за спиной
+  const r = clamp((t - 75) / 15);
+  const dash = easeIn(r);
+  steve.position.x = -8 * dash;
+  setCrouch(steve, 1);
+  steve.userData.torso.rotation.x = 0.5;
+  const run = Math.sin(t * 1.2) * 0.4;
+  steve.userData.hipL.rotation.x = -1.2 + run;
+  steve.userData.hipR.rotation.x = -1.2 - run;
+  steve.userData.shoulderL.rotation.x = 0.8 - run;
+  steve.userData.shoulderR.rotation.x = 0.8 + run;
+  if (t % 2 < 1) spawnDust(steve.position.x + 0.6, 0.05, 0, 3, 0.6);
 }
 
 let tick = 0;
 let paused = false;
-let speed = 1;
 const speeds = [0.5, 1, 2];
 let speedIdx = 1;
 
@@ -150,32 +234,39 @@ document.getElementById('play').onclick = e => {
 };
 document.getElementById('speed').onclick = e => {
   speedIdx = (speedIdx + 1) % speeds.length;
-  speed = speeds[speedIdx];
-  e.target.textContent = `Скорость x${speed}`;
+  e.target.textContent = `Скорость x${speeds[speedIdx]}`;
 };
 
 let last = performance.now();
-const TICK_MS = 50; // 20 тиков в секунду, как в Minecraft
+const TICK_MS = 50;
 
 function loop(now) {
   requestAnimationFrame(loop);
   const dt = now - last;
   last = now;
   if (!paused) {
-    tick += (dt / TICK_MS) * speed;
-    if (tick >= CYCLE) tick -= CYCLE;
+    tick += (dt / TICK_MS) * speeds[speedIdx];
+    if (tick >= CYCLE) {
+      tick -= CYCLE;
+      dust.forEach(d => scene.remove(d));
+      dust.length = 0;
+    }
   }
 
   applyFrame(tick);
 
   for (let i = dust.length - 1; i >= 0; i--) {
     const d = dust[i];
-    d.position.add(d.userData.v);
-    d.userData.v.y -= 0.01;
     d.userData.life--;
-    d.material.opacity = Math.max(0, d.userData.life / 30) * 0.7;
+    d.position.add(d.userData.v);
+    d.userData.v.y -= 0.004;
+    d.userData.v.multiplyScalar(0.96);
+    const lifeK = Math.max(0, d.userData.life / d.userData.maxLife);
+    d.scale.setScalar(d.userData.s * (0.4 + 0.6 * lifeK));
+    d.material.opacity = 0.7 * lifeK;
     if (d.userData.life <= 0) {
       scene.remove(d);
+      d.material.dispose();
       dust.splice(i, 1);
     }
   }
