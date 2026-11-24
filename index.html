@@ -116,7 +116,7 @@ footer button:disabled{opacity:.4;cursor:not-allowed}
 <script>
 const $ = s => document.querySelector(s);
 // Данные из личного кабинета Metered (TURN Server -> Credentials). Хост обычно global.relay.metered.ca
-const TURN_HOST = 'global.relay.metered.ca', TURN_USER = '7938126a7de417ff90500854', TURN_PASS = 'gxxL7QysHjrrwUF/';
+const TURN_HOST = 'standard.relay.metered.ca', TURN_USER = '7938126a7de417ff90500854', TURN_PASS = 'gxxL7QysHjrrwUF/';
 const TURN = [
   { urls: 'stun:stun.relay.metered.ca:80' },
   { urls: 'turn:' + TURN_HOST + ':80', username: TURN_USER, credential: TURN_PASS },
