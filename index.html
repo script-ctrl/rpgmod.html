@@ -115,8 +115,8 @@ footer button:disabled{opacity:.4;cursor:not-allowed}
 <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <script>
 const $ = s => document.querySelector(s);
-// ВПИШИТЕ данные из личного кабинета Metered (TURN Server -> Credentials). Хост обычно global.relay.metered.ca
-const TURN_HOST = 'global.relay.metered.ca', TURN_USER = '1c24d1907726cf779e1d0b4d', TURN_PASS = 'YDMRyPMLsWs90P8w';
+// Данные из личного кабинета Metered (TURN Server -> Credentials). Хост обычно global.relay.metered.ca
+const TURN_HOST = 'global.relay.metered.ca', TURN_USER = '7938126a7de417ff90500854', TURN_PASS = 'gxxL7QysHjrrwUF/';
 const TURN = [
   { urls: 'stun:stun.relay.metered.ca:80' },
   { urls: 'turn:' + TURN_HOST + ':80', username: TURN_USER, credential: TURN_PASS },
@@ -408,6 +408,7 @@ setInterval(applyVideoQuality, 3000);
 let yt, ytReady = false, apiReady = false, music = null, curVid = null;
 let resumeTimer = null;
 let cmdUntil = 0;   // «окно тишины» после наших собственных команд плееру (чтобы не принять эхо за действие админа)
+let lastSeek = 0;   // когда гость последний раз подтягивал позицию (не чаще раза в 3 сек.)
 const ytTag = document.createElement('script'); ytTag.src = 'https://www.youtube.com/iframe_api'; document.head.append(ytTag);
 window.onYouTubeIframeAPIReady = () => { apiReady = true; if (!$('#musicbar').classList.contains('hidden')) ensurePlayer(); };
 function ensurePlayer() {
@@ -438,10 +439,13 @@ function applyMusic(m) {
   else $('#mresume').classList.add('hidden');
 }
 // Пульс от админа: подтягиваем позицию гостя, если разошлись больше чем на 1.5 сек.
+// Не чаще раза в 3 сек., иначе при рекламе плеер гостя постоянно сбрасывается.
 function syncMusic(m) {
   if (isAdmin || !ytReady || !music || !music.playing || m.videoId !== curVid) return;
   const target = m.time + 0.3;                          // поправка на задержку сети
-  if (Math.abs(yt.getCurrentTime() - target) > 1.5) yt.seekTo(target, true);
+  if (Math.abs(yt.getCurrentTime() - target) > 1.5 && Date.now() - lastSeek > 3000) {
+    lastSeek = Date.now(); yt.seekTo(target, true);
+  }
   if (yt.getPlayerState() === 2) yt.playVideo();        // гость на паузе, а админ играет
 }
 // Пауза и запуск — только у админа и сразу у всех. Если состояние плеера разошлось с командой админа, возвращаем как у админа.
@@ -456,11 +460,20 @@ function onYtState(e) {
     send({ type: 'music', videoId: music.videoId, playing, time: yt.getCurrentTime() });
   } else if (playing) yt.pauseVideo(); else yt.playVideo();   // гость: всегда как у админа
 }
-// Пульс админа: раз в 4 сек. рассылает текущую позицию.
+// Пульс админа раз в секунду: обычная позиция уходит как music-sync,
+// а если позиция скакнула (админ перемотал) — отправляем новую позицию как music, чтобы гости сразу встали на неё.
+let expectTime = null, lastTick = 0;
 setInterval(() => {
-  if (isAdmin && ytReady && music?.playing && yt.getPlayerState() === 1)
-    send({ type: 'music-sync', videoId: music.videoId, time: yt.getCurrentTime() });
-}, 4000);
+  if (!isAdmin || !ytReady || !music?.playing || yt.getPlayerState() !== 1) { expectTime = null; return; }
+  const now = yt.getCurrentTime();
+  const expected = expectTime == null ? now : expectTime + (Date.now() - lastTick) / 1000;
+  if (expectTime != null && Math.abs(now - expected) > 2) {
+    send({ type: 'music', videoId: music.videoId, playing: true, time: now });   // перемотка
+  } else {
+    send({ type: 'music-sync', videoId: music.videoId, time: now });              // обычный пульс
+  }
+  expectTime = now; lastTick = Date.now();
+}, 1000);
 $('#mresume').onclick = () => { yt.playVideo(); $('#mresume').classList.add('hidden'); };
 const ytId = u => (u.match(/(?:v=|youtu\.be\/|embed\/|shorts\/)([\w-]{11})/) || [])[1];
 $('#mplay').onclick = () => {
