@@ -46,7 +46,10 @@ header b{font-size:16px}
 #recmeter{color:var(--dim);font:12px ui-monospace,Menlo,monospace}
 #recbanner{background:var(--bad);color:#fff;border-radius:6px;padding:3px 10px;font-size:13px}
 #musicbar{display:flex;gap:14px;align-items:center;padding:8px 16px;border-bottom:1px solid var(--line);flex-wrap:wrap}
-#ytbox{width:200px;height:113px;background:#000;border-radius:8px;overflow:hidden;flex:none}
+/* на плеер нельзя нажимать: паузой управляет только админ. Прозрачный слой перехватывает клики поверх iframe */
+#ytbox{position:relative;width:200px;height:113px;background:#000;border-radius:8px;overflow:hidden;flex:none;pointer-events:none}
+#ytbox::after{content:"";position:absolute;inset:0;pointer-events:auto}
+#mresume{justify-self:start;background:var(--accent);color:#fff;border:0;border-radius:8px;padding:8px 14px;cursor:pointer}
 .mctl{display:grid;gap:8px;flex:1;min-width:240px}
 #madmin{display:flex;gap:6px;flex-wrap:wrap}
 #madmin input{flex:1;min-width:180px}
@@ -85,6 +88,7 @@ footer button:disabled{opacity:.4;cursor:not-allowed}
     <div id="ytbox"><div id="yt"></div></div>
     <div class="mctl">
       <div id="mnow">Музыка не выбрана</div>
+      <button id="mresume" class="hidden">▶ Включить музыку</button>
       <div id="madmin" class="hidden">
         <input id="mlink" placeholder="Ссылка на видео YouTube">
         <button id="mplay">Включить</button><button id="mpause">Пауза</button><button id="mstop">Стоп</button>
@@ -167,6 +171,11 @@ function hubHandle(c, m) {
       const id = m.videoId && String(m.videoId).slice(0, 20);
       hub.music = id ? { videoId: id, playing: !!m.playing, time: +m.time || 0, at: Date.now() } : null;
       hubAll({ type: 'music', music: musicNow() });
+    } else if (m.type === 'music-sync') {              // пульс админа: текущая позиция воспроизведения
+      if (hub.music && hub.music.playing && hub.music.videoId === m.videoId) {
+        hub.music.time = +m.time || 0; hub.music.at = Date.now();
+        hub.clients.forEach(o => o !== c && hubSend(o, { type: 'music-sync', videoId: m.videoId, time: hub.music.time }));
+      }
     } else if (m.type === 'recording') { hub.recording = !!m.on; hubAll({ type: 'recording', on: hub.recording }); }
     else if (m.type === 'mute-all') hub.clients.forEach(o => o !== c && hubSend(o, { type: 'force-mute' }));
     else if (m.type === 'mute' || m.type === 'kick') {
@@ -234,6 +243,7 @@ async function onMsg(m) {
     case 'state': Object.assign(info.get(m.id) || {}, { mic: m.mic, cam: m.cam }); render(); break;
     case 'signal': onSignal(m.from, m.data); break;
     case 'music': applyMusic(m.music); break;
+    case 'music-sync': syncMusic(m); break;
     case 'recording': setRec(m.on); break;
     case 'broadcast': broadcast = m.on; applyBroadcast(); break;
     case 'force-mute': setMic(false); break;
@@ -388,27 +398,62 @@ setInterval(applyVideoQuality, 3000);
 
 // --- музыка с YouTube: админ выбирает трек, у всех играет синхронно ---
 let yt, ytReady = false, apiReady = false, music = null, curVid = null;
+let resumeTimer = null;
+let cmdUntil = 0;   // «окно тишины» после наших собственных команд плееру (чтобы не принять эхо за действие админа)
 const ytTag = document.createElement('script'); ytTag.src = 'https://www.youtube.com/iframe_api'; document.head.append(ytTag);
 window.onYouTubeIframeAPIReady = () => { apiReady = true; if (!$('#musicbar').classList.contains('hidden')) ensurePlayer(); };
 function ensurePlayer() {
   if (yt || !apiReady) return;
   yt = new YT.Player('yt', { width: 200, height: 113, playerVars: { playsinline: 1, controls: 0, disablekb: 1 },
-    events: { onReady: () => { ytReady = true; yt.setVolume(+$('#mvol').value); applyMusic(music); } } });
+    events: { onReady: () => { ytReady = true; yt.setVolume(+$('#mvol').value); applyMusic(music); }, onStateChange: onYtState } });
 }
 function applyMusic(m) {
   music = m;
+  cmdUntil = Date.now() + 800;
   $('#musicbar').classList.toggle('hidden', !m && !isAdmin);
   $('#mnow').textContent = !m ? 'Музыка не выбрана' : m.playing ? 'Играет музыка' : 'Музыка на паузе';
   $('#mpause').textContent = m && !m.playing ? 'Продолжить' : 'Пауза';
   if (m || isAdmin) ensurePlayer();
   if (!ytReady) return;
-  if (!m) { yt.stopVideo(); curVid = null; return; }
+  if (!m) { yt.stopVideo(); curVid = null; $('#mresume').classList.add('hidden'); return; }
   if (m.videoId !== curVid) {
     curVid = m.videoId;
     const o = { videoId: m.videoId, startSeconds: m.time };
     m.playing ? yt.loadVideoById(o) : yt.cueVideoById(o);
   } else { yt.seekTo(m.time, true); m.playing ? yt.playVideo() : yt.pauseVideo(); }
+  // Если браузер не дал включить звук сам (автозапуск запрещён) — показываем кнопку: одно нажатие, и музыка идёт вместе со всеми.
+  clearTimeout(resumeTimer);
+  if (m.playing) resumeTimer = setTimeout(() => {
+    const s = yt.getPlayerState();
+    if (music?.playing && s !== 1 && s !== 3) $('#mresume').classList.remove('hidden');
+  }, 2500);
+  else $('#mresume').classList.add('hidden');
 }
+// Пульс от админа: подтягиваем позицию гостя, если разошлись больше чем на 1.5 сек.
+function syncMusic(m) {
+  if (isAdmin || !ytReady || !music || !music.playing || m.videoId !== curVid) return;
+  const target = m.time + 0.3;                          // поправка на задержку сети
+  if (Math.abs(yt.getCurrentTime() - target) > 1.5) yt.seekTo(target, true);
+  if (yt.getPlayerState() === 2) yt.playVideo();        // гость на паузе, а админ играет
+}
+// Пауза и запуск — только у админа и сразу у всех. Если состояние плеера разошлось с командой админа, возвращаем как у админа.
+function onYtState(e) {
+  const s = e.data;
+  if (s === 1) $('#mresume').classList.add('hidden');
+  if (!music || !ytReady || (s !== 1 && s !== 2)) return;
+  const playing = s === 1;
+  if (playing === music.playing) return;
+  if (isAdmin) {
+    if (Date.now() < cmdUntil) return;                  // это эхо нашей же команды
+    send({ type: 'music', videoId: music.videoId, playing, time: yt.getCurrentTime() });
+  } else if (playing) yt.pauseVideo(); else yt.playVideo();   // гость: всегда как у админа
+}
+// Пульс админа: раз в 4 сек. рассылает текущую позицию.
+setInterval(() => {
+  if (isAdmin && ytReady && music?.playing && yt.getPlayerState() === 1)
+    send({ type: 'music-sync', videoId: music.videoId, time: yt.getCurrentTime() });
+}, 4000);
+$('#mresume').onclick = () => { yt.playVideo(); $('#mresume').classList.add('hidden'); };
 const ytId = u => (u.match(/(?:v=|youtu\.be\/|embed\/|shorts\/)([\w-]{11})/) || [])[1];
 $('#mplay').onclick = () => {
   const id = ytId($('#mlink').value);
