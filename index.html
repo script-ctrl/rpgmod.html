@@ -115,7 +115,15 @@ footer button:disabled{opacity:.4;cursor:not-allowed}
 <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <script>
 const $ = s => document.querySelector(s);
-let ICE = [{ urls: 'stun:stun.l.google.com:19302' }];  // дополняется серверами PeerJS (STUN/TURN)
+// Бесплатный публичный TURN (без регистрации): нужен, чтобы люди из разных сетей слышали друг друга. Для надёжности можно заменить на свой
+const TURN_HOST = 'openrelay.metered.ca', TURN_USER = 'openrelayproject', TURN_PASS = 'openrelayproject';
+const TURN = [
+  { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'turn:' + TURN_HOST + ':80', username: TURN_USER, credential: TURN_PASS },
+  { urls: 'turn:' + TURN_HOST + ':443?transport=tcp', username: TURN_USER, credential: TURN_PASS },
+  { urls: 'turns:' + TURN_HOST + ':443?transport=tcp', username: TURN_USER, credential: TURN_PASS }
+];
+let ICE = TURN;
 let myId, isAdmin = false, broadcast = false, leaving = false;
 let micTrack = null, camTrack = null, micOn = true, camOn = false;
 const peers = new Map(); // id -> {pc, vt, stream, name, admin, mic, cam}
@@ -185,13 +193,12 @@ function hubHandle(c, m) {
   }
 }
 function startHost(hostId, name) {
-  peer = new Peer(hostId);
+  peer = new Peer(hostId, { config: { iceServers: TURN } });
   peer.on('error', err => {
     setErr(err.type === 'unavailable-id' ? 'Комната с таким названием уже создана. Выберите другое название или войдите как участник.' : 'Ошибка сети: ' + err.type);
     try { peer.destroy(); } catch {}
   });
   peer.on('open', () => {
-    ICE = peer.options?.config?.iceServers || ICE;
     const me = { id: String(hub.next++), name, admin: true, mic: micOn, cam: false, local: true };
     net.send = m => hubHandle(me, m);
     net.close = () => { try { peer.destroy(); } catch {} };
@@ -210,12 +217,11 @@ function startHost(hostId, name) {
   });
 }
 function startGuest(hostId, name) {
-  peer = new Peer();
+  peer = new Peer(undefined, { config: { iceServers: TURN } });
   let opened = false;
   const fail = t => { setErr(t); try { peer.destroy(); } catch {} };
   peer.on('error', err => fail(err.type === 'peer-unavailable' ? 'Админ ещё не создал эту комнату. Пусть он войдёт первым.' : 'Ошибка сети: ' + err.type));
   peer.on('open', () => {
-    ICE = peer.options?.config?.iceServers || ICE;
     const conn = peer.connect(hostId, { reliable: true, serialization: 'json' });
     net.send = m => conn.open && conn.send(m);
     net.close = () => { try { conn.close(); } catch {} try { peer.destroy(); } catch {} };
@@ -256,6 +262,7 @@ function connect(p, initiator) {
   const pc = new RTCPeerConnection({ iceServers: ICE });
   const stream = new MediaStream();
   const st = { pc, vt: null, at: null, stream, q: Promise.resolve() };
+  pc.oniceconnectionstatechange = () => { if (pc.iceConnectionState === 'failed') pc.restartIce(); };
   pc.ontrack = e => { stream.addTrack(e.track); if (e.track.kind === 'audio' && !tabRec) addRecSrc(p.id, stream); render(); };
   pc.onicecandidate = e => e.candidate && send({ type: 'signal', to: p.id, data: { ice: e.candidate } });
   if (initiator) {                                     // новый участник звонит всем, кто уже в комнате
