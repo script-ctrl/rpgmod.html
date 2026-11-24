@@ -1,328 +1,583 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ru">
 <head>
-<meta charset="UTF-8">
-<title>Ассасин: таймлайн 3.0 с</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>VoiceHub</title>
 <style>
-  html, body { margin: 0; height: 100%; background: #0d0d10; overflow: hidden; font-family: monospace; color: #ccc; }
-  #ui { position: absolute; top: 12px; left: 12px; z-index: 2; }
-  button { background: #333; color: #eee; border: 1px solid #555; padding: 6px 12px; margin-right: 6px; cursor: pointer; }
-  #info { margin-top: 8px; }
+:root{--bg:#12161d;--panel:#1b212b;--line:#2b3441;--text:#e8ecf2;--dim:#8d99ab;--accent:#5b8def;--bad:#e5484d;--ok:#3fb68b;color-scheme:dark}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--text);font:15px/1.4 "Segoe UI",system-ui,sans-serif}
+button,input{font:inherit;color:inherit}
+.hidden{display:none!important}
+/* вход */
+#join{min-height:100%;display:grid;place-items:center;padding:24px}
+#join form{width:min(380px,100%);display:grid;gap:12px}
+#join h1{margin:0 0 4px;font-size:28px;letter-spacing:-.02em}
+#join p{margin:0 0 8px;color:var(--dim)}
+input{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:11px 12px;width:100%}
+input:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.primary{background:var(--accent);border:0;border-radius:8px;padding:12px;font-weight:600;cursor:pointer;color:#fff}
+#err{color:var(--bad);min-height:1.4em;margin:0}
+.chk{display:flex;gap:8px;align-items:center;color:var(--text)}
+.chk input{width:auto}
+.hint{font-size:13px;color:var(--dim);margin:0}
+/* комната */
+#app{height:100%;display:flex;flex-direction:column}
+header{display:flex;align-items:center;gap:12px;padding:10px 16px;border-bottom:1px solid var(--line)}
+header b{font-size:16px}
+#count{color:var(--dim)}
+#banner{margin-left:auto;background:var(--accent);color:#fff;border-radius:6px;padding:3px 10px;font-size:13px}
+#grid{flex:1;min-height:0;display:grid;gap:10px;padding:12px;overflow:auto;align-content:center;
+  grid-template-columns:repeat(auto-fit,minmax(min(100%,230px),1fr))}
+.tile{position:relative;aspect-ratio:16/10;background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden;display:grid;place-items:center}
+.tile.speaking{border-color:var(--ok);box-shadow:0 0 0 1px var(--ok)}
+.tile video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.tile .av{width:25%;aspect-ratio:1;max-width:72px;border-radius:50%;background:var(--line);display:grid;place-items:center;font-size:26px;font-weight:600}
+.tile.cam .av{display:none}
+.tile:not(.cam) video{opacity:0}
+.label{position:absolute;left:8px;bottom:8px;display:flex;gap:6px;align-items:center;background:#000a;border-radius:6px;padding:3px 8px;font-size:13px}
+.tag{background:var(--accent);border-radius:4px;padding:0 5px;font-size:11px}
+.muted-ic{color:var(--bad)}
+.adm{position:absolute;right:6px;top:6px;display:flex;gap:4px}
+.adm button{background:#000a;border:0;border-radius:6px;padding:4px 8px;font-size:12px;cursor:pointer}
+.adm button:hover{background:var(--bad)}
+#recmeter{color:var(--dim);font:12px ui-monospace,Menlo,monospace}
+#recbanner{background:var(--bad);color:#fff;border-radius:6px;padding:3px 10px;font-size:13px}
+#musicbar{display:flex;gap:14px;align-items:center;padding:8px 16px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+#ytbox{width:200px;height:113px;background:#000;border-radius:8px;overflow:hidden;flex:none}
+.mctl{display:grid;gap:8px;flex:1;min-width:240px}
+#madmin{display:flex;gap:6px;flex-wrap:wrap}
+#madmin input{flex:1;min-width:180px}
+#madmin button{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px 12px;cursor:pointer}
+.mctl label{display:flex;gap:10px;align-items:center;color:var(--dim)}
+.mctl input[type=range]{width:160px;padding:0}
+#devpanel{position:fixed;left:50%;bottom:72px;transform:translateX(-50%);z-index:5;width:min(92vw,360px);display:grid;gap:10px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;box-shadow:0 8px 30px #0008}
+#devpanel label{display:grid;gap:4px;color:var(--dim);font-size:13px}
+#devpanel select{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:9px;color:var(--text);width:100%}
+/* панель управления */
+footer{display:flex;justify-content:center;gap:10px;padding:12px;border-top:1px solid var(--line);flex-wrap:wrap}
+footer button{background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:10px 18px;cursor:pointer}
+footer button:hover{border-color:var(--dim)}
+footer button.off{background:var(--bad);border-color:var(--bad)}
+footer button.on{background:var(--accent);border-color:var(--accent)}
+footer button:disabled{opacity:.4;cursor:not-allowed}
+#leave{background:var(--bad);border-color:var(--bad)}
 </style>
 </head>
 <body>
-<div id="ui">
-  <button id="play">Пауза</button>
-  <button id="speed">Скорость x1</button>
-  <div id="info"></div>
-</div>
-<script type="importmap">
-{ "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
-</script>
-<script type="module">
-import * as THREE from 'three';
+<section id="join">
+  <form id="f">
+    <div><h1>VoiceHub</h1><p>Голосовые комнаты до 20 человек.</p></div>
+    <input id="name" placeholder="Ваше имя" required maxlength="30">
+    <input id="room" placeholder="Название комнаты" value="main" required maxlength="40">
+    <label class="chk"><input id="admin" type="checkbox"> Я администратор — создать комнату</label>
+    <p class="hint">Админ заходит первым и создаёт комнату. Участники заходят по тому же названию, пока админ в сети.</p>
+    <p id="err"></p>
+    <button class="primary">Войти в комнату</button>
+  </form>
+</section>
 
-const LEAD_IN = 0.6;          // сек: только зомби, до появления ассасина
-const DURATION = 3.0;         // сек: таймлайн ассасина из ТЗ
-const CYCLE = LEAD_IN + DURATION;
+<section id="app" class="hidden">
+  <header><b id="rn"></b><span id="count"></span><span id="banner" class="hidden">Говорит администратор</span><span id="recbanner" class="hidden">● Идёт запись</span><span id="recmeter" class="hidden"></span></header>
+  <div id="musicbar" class="hidden">
+    <div id="ytbox"><div id="yt"></div></div>
+    <div class="mctl">
+      <div id="mnow">Музыка не выбрана</div>
+      <div id="madmin" class="hidden">
+        <input id="mlink" placeholder="Ссылка на видео YouTube">
+        <button id="mplay">Включить</button><button id="mpause">Пауза</button><button id="mstop">Стоп</button>
+      </div>
+      <label>Громкость музыки <input id="mvol" type="range" min="0" max="100" value="60"></label>
+    </div>
+  </div>
+  <main id="grid"></main>
+  <div id="devpanel" class="hidden">
+    <label>Микрофон<select id="micsel"></select></label>
+    <label>Камера<select id="camsel"></select></label>
+  </div>
+  <footer>
+    <button id="mic">Микрофон</button>
+    <button id="cam">Камера</button>
+    <button id="bc" class="hidden">Эфир администратора</button>
+    <button id="muteall" class="hidden">Выключить всем микрофон</button>
+    <button id="dev">Устройства</button>
+    <button id="rec" class="hidden">Запись</button>
+    <button id="leave">Выйти</button>
+  </footer>
+</section>
 
-const ZOMBIE_POS = [new THREE.Vector3(-2.4, 0, -1.6), new THREE.Vector3(-1.0, 0, -0.4)];
-const ASSASSIN_POS = new THREE.Vector3(0.4, 0, 0.2);
+<script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<script>
+const $ = s => document.querySelector(s);
+let ICE = [{ urls: 'stun:stun.l.google.com:19302' }];  // дополняется серверами PeerJS (STUN/TURN)
+let myId, isAdmin = false, broadcast = false, leaving = false;
+let micTrack = null, camTrack = null, micOn = true, camOn = false;
+const peers = new Map(); // id -> {pc, vt, stream, name, admin, mic, cam}
+const info = new Map();  // id -> данные участника (включая себя)
 
-const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x0d0d10);
-scene.fog = new THREE.Fog(0x0d0d10, 14, 28);
-
-const camera = new THREE.PerspectiveCamera(36, innerWidth / innerHeight, 0.1, 100);
-camera.position.set(6.5, 5.0, 8.5);
-camera.lookAt(-0.6, 1.0, -0.2);
-
-const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-renderer.setSize(innerWidth, innerHeight);
-document.body.appendChild(renderer.domElement);
-
-scene.add(new THREE.HemisphereLight(0xc8ccff, 0x151518, 1.0));
-const key = new THREE.DirectionalLight(0xffe2b8, 0.9);
-key.position.set(4, 8, 5);
-scene.add(key);
-
-const ground = new THREE.Mesh(new THREE.PlaneGeometry(60, 60), new THREE.MeshLambertMaterial({ color: 0x1c1c21 }));
-ground.rotation.x = -Math.PI / 2;
-scene.add(ground);
-
-// Фигура из кубов. Все материалы прозрачные, чтобы можно было растворять силуэт.
-function makeFigure(c) {
-  const root = new THREE.Group();
-  const mats = [];
-  const mat = (col, opts = {}) => {
-    const m = new THREE.MeshLambertMaterial({ color: col, transparent: true, opacity: 1, ...opts });
-    mats.push(m);
-    return m;
-  };
-  const box = (w, h, d, col) => {
-    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat(col));
-    return m;
-  };
-
-  const hips = new THREE.Group();
-  hips.position.y = 0.78;
-  root.add(hips);
-
-  const torso = new THREE.Group();
-  hips.add(torso);
-  const body = box(0.6, 0.75, 0.3, c.body);
-  body.position.y = 0.375;
-  torso.add(body);
-
-  // Голова: группа для поворота, капюшон как дочерний элемент
-  const head = new THREE.Group();
-  head.position.y = 0.95;
-  torso.add(head);
-  const skull = box(0.5, 0.5, 0.5, c.head);
-  head.add(skull);
-
-  const hood = box(0.56, 0.3, 0.56, c.hood || c.body);
-  hood.position.y = 0.2;
-  head.add(hood);
-
-  const shoulderL = new THREE.Group();
-  shoulderL.position.set(-0.4, 0.7, 0);
-  torso.add(shoulderL);
-  const armL = box(0.2, 0.7, 0.2, c.arm);
-  armL.position.y = -0.35;
-  shoulderL.add(armL);
-
-  const shoulderR = new THREE.Group();
-  shoulderR.position.set(0.4, 0.7, 0);
-  torso.add(shoulderR);
-  const armR = box(0.2, 0.7, 0.2, c.arm);
-  armR.position.y = -0.35;
-  shoulderR.add(armR);
-
-  const hipL = new THREE.Group();
-  hipL.position.set(-0.15, 0, 0);
-  hips.add(hipL);
-  const legL = box(0.22, 0.78, 0.22, c.leg);
-  legL.position.y = -0.39;
-  hipL.add(legL);
-
-  const hipR = new THREE.Group();
-  hipR.position.set(0.15, 0, 0);
-  hips.add(hipR);
-  const legR = box(0.22, 0.78, 0.22, c.leg);
-  legR.position.y = -0.39;
-  hipR.add(legR);
-
-  root.userData = { hips, torso, head, hood, shoulderL, shoulderR, hipL, hipR, mats };
-  return root;
+// --- Связь без своего сервера: бесплатный облачный сигналинг PeerJS. Админ = «хаб» комнаты прямо в его браузере ---
+const MAX = 20;
+let peer = null;
+const hub = { clients: new Map(), broadcast: false, music: null, recording: false, next: 1 };
+const net = { send: () => {}, close: () => {} };
+const send = m => net.send(m);
+const setErr = t => { $('#err').textContent = t; };
+async function roomPeerId(room) {
+  const d = await crypto.subtle.digest('SHA-256', new TextEncoder().encode('voicehub:' + room.toLowerCase()));
+  return 'vh-' + [...new Uint8Array(d)].slice(0, 12).map(x => x.toString(16).padStart(2, '0')).join('');
 }
+$('#f').onsubmit = async e => {
+  e.preventDefault(); setErr('');
+  if (!window.Peer) return setErr('Не загрузилась библиотека PeerJS: проверьте интернет.');
+  const name = $('#name').value.trim(), room = $('#room').value.trim();
+  try {
+    const s = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+    micTrack = s.getAudioTracks()[0];
+  } catch { micTrack = null; micOn = false; }
+  const hostId = await roomPeerId(room);
+  $('#admin').checked ? startHost(hostId, name) : startGuest(hostId, name);
+};
 
-const assassin = makeFigure({ head: 0x2a1c14, body: 0x2b2b33, hood: 0x1a1a22, arm: 0x2b2b33, leg: 0x1a1a22 });
-assassin.position.copy(ASSASSIN_POS);
-scene.add(assassin);
-
-// Клинок: в руке, но в позе покоя спрятан за спиной
-const blade = new THREE.Mesh(
-  new THREE.BoxGeometry(0.06, 0.7, 0.04),
-  new THREE.MeshLambertMaterial({ color: 0xd0d4dc, emissive: 0x88ccff, emissiveIntensity: 0, transparent: true })
-);
-assassin.userData.shoulderR.add(blade);
-const BLADE_BACK = { p: new THREE.Vector3(0.12, 0.25, -0.3), r: new THREE.Euler(0.6, 0, -0.5) };
-const BLADE_HAND = { p: new THREE.Vector3(0, -0.6, 0.12), r: new THREE.Euler(0, 0, 0) };
-
-const zombies = ZOMBIE_POS.map(() => makeFigure({ head: 0x4d7a3a, body: 0x2a7a7a, arm: 0x4d7a3a, leg: 0x2a2a7a }));
-zombies.forEach((z, i) => {
-  z.position.copy(ZOMBIE_POS[i]);
-  z.rotation.y = Math.PI * 0.25;
-  scene.add(z);
-});
-
-// Пыль
-const dust = [];
-const dustGeo = new THREE.BoxGeometry(1, 1, 1);
-function spawnDust(pos, count, spread) {
-  for (let i = 0; i < count; i++) {
-    const m = new THREE.Mesh(dustGeo, new THREE.MeshBasicMaterial({ color: 0x8a8a92, transparent: true, opacity: 0.6 }));
-    const s = 0.05 + Math.random() * 0.08;
-    m.scale.setScalar(s);
-    m.position.set(pos.x + (Math.random() - 0.5) * spread, 0.05 + Math.random() * 0.1, pos.z + (Math.random() - 0.5) * spread);
-    m.userData = {
-      v: new THREE.Vector3((Math.random() - 0.5) * 0.05, 0.02 + Math.random() * 0.05, (Math.random() - 0.5) * 0.05),
-      life: 24 + Math.floor(Math.random() * 14), maxLife: 38, s
-    };
-    scene.add(m);
-    dust.push(m);
+// Хаб: то же, что делал сервер (участники, пересылка сигналов, команды админа), только внутри браузера админа.
+const pub = c => ({ id: c.id, name: c.name, admin: c.admin, mic: c.mic, cam: c.cam });
+const hubSend = (c, m) => c.local ? queueMicrotask(() => onMsg(m)) : (c.conn.open && c.conn.send(m));
+const hubAll = m => hub.clients.forEach(c => hubSend(c, m));
+const musicNow = () => hub.music && { videoId: hub.music.videoId, playing: hub.music.playing,
+  time: hub.music.time + (hub.music.playing ? (Date.now() - hub.music.at) / 1000 : 0) };
+function hubJoin(c) {
+  hubSend(c, { type: 'welcome', id: c.id, admin: c.admin, broadcast: hub.broadcast, recording: hub.recording,
+    music: musicNow(), peers: [...hub.clients.values()].map(pub) });
+  hub.clients.forEach(o => hubSend(o, { type: 'peer-joined', peer: pub(c) }));
+  hub.clients.set(c.id, c);
+}
+function hubLeave(c) {
+  if (!hub.clients.delete(c.id)) return;
+  hubAll({ type: 'peer-left', id: c.id });
+}
+function hubHandle(c, m) {
+  if (m.type === 'signal') { const t = hub.clients.get(m.to); t && hubSend(t, { type: 'signal', from: c.id, data: m.data }); }
+  else if (m.type === 'state') {
+    c.mic = !!m.mic; c.cam = !!m.cam;
+    hub.clients.forEach(o => o !== c && hubSend(o, { type: 'state', id: c.id, mic: c.mic, cam: c.cam }));
+  } else if (c.admin) {
+    if (m.type === 'broadcast') { hub.broadcast = !!m.on; hubAll({ type: 'broadcast', on: hub.broadcast }); }
+    else if (m.type === 'music') {
+      const id = m.videoId && String(m.videoId).slice(0, 20);
+      hub.music = id ? { videoId: id, playing: !!m.playing, time: +m.time || 0, at: Date.now() } : null;
+      hubAll({ type: 'music', music: musicNow() });
+    } else if (m.type === 'recording') { hub.recording = !!m.on; hubAll({ type: 'recording', on: hub.recording }); }
+    else if (m.type === 'mute-all') hub.clients.forEach(o => o !== c && hubSend(o, { type: 'force-mute' }));
+    else if (m.type === 'mute' || m.type === 'kick') {
+      const t = hub.clients.get(m.to);
+      if (t) { hubSend(t, { type: m.type === 'mute' ? 'force-mute' : 'kicked' }); if (m.type === 'kick' && t.conn) setTimeout(() => t.conn.close(), 300); }
+    }
   }
 }
-
-const clamp = v => Math.max(0, Math.min(1, v));
-const easeOut = k => 1 - Math.pow(1 - k, 3);
-const easeInOut = k => (k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2);
-const lerp = (a, b, k) => a + (b - a) * k;
-
-function setPose(p, { crouch = 0, lean = 0, armR = 0, armL = 0 } = {}) {
-  const u = p.userData;
-  u.hips.position.y = 0.78 - 0.4 * crouch;
-  u.torso.rotation.x = lean;
-  u.hipL.rotation.x = -1.5 * crouch;
-  u.hipR.rotation.x = -1.5 * crouch;
-  u.shoulderL.rotation.x = armL;
-  u.shoulderR.rotation.x = armR;
+function startHost(hostId, name) {
+  peer = new Peer(hostId);
+  peer.on('error', err => {
+    setErr(err.type === 'unavailable-id' ? 'Комната с таким названием уже создана. Выберите другое название или войдите как участник.' : 'Ошибка сети: ' + err.type);
+    try { peer.destroy(); } catch {}
+  });
+  peer.on('open', () => {
+    ICE = peer.options?.config?.iceServers || ICE;
+    const me = { id: String(hub.next++), name, admin: true, mic: micOn, cam: false, local: true };
+    net.send = m => hubHandle(me, m);
+    net.close = () => { try { peer.destroy(); } catch {} };
+    peer.on('connection', conn => {
+      let c = null;
+      conn.on('data', m => {
+        if (!c && m.type === 'join') {
+          if (hub.clients.size >= MAX) { conn.send({ type: 'error', text: `Комната заполнена (максимум ${MAX}).` }); setTimeout(() => conn.close(), 300); return; }
+          c = { id: String(hub.next++), name: String(m.name || 'Гость').slice(0, 30), admin: false, mic: true, cam: false, conn };
+          hubJoin(c);
+        } else if (c) hubHandle(c, m);
+      });
+      conn.on('close', () => c && hubLeave(c));
+    });
+    hubJoin(me);
+  });
 }
-
-function setOpacity(p, o) {
-  p.userData.mats.forEach(m => { m.opacity = o; });
-}
-
-// Зомби стоят, покачиваются; умирают на 1.7 с ассасина
-const ZOMBIE_DEATH = 1.7;
-function applyZombies(t, a) {
-  zombies.forEach((z, i) => {
-    const sway = Math.sin(t * 2 + i * 2) * 0.04;
-    setPose(z, { armR: sway, armL: -sway });
-    z.position.copy(ZOMBIE_POS[i]);
-    z.position.y = 0;
-    z.rotation.set(0, Math.PI * 0.25, 0);
-    if (a >= ZOMBIE_DEATH) {
-      const k = easeOut(clamp((a - ZOMBIE_DEATH) / 0.4));
-      z.rotation.z = (Math.PI / 2) * k * (i === 0 ? 1 : -1) * 0.95;
-      z.position.y = 0.4 * k;
-    }
+function startGuest(hostId, name) {
+  peer = new Peer();
+  let opened = false;
+  const fail = t => { setErr(t); try { peer.destroy(); } catch {} };
+  peer.on('error', err => fail(err.type === 'peer-unavailable' ? 'Админ ещё не создал эту комнату. Пусть он войдёт первым.' : 'Ошибка сети: ' + err.type));
+  peer.on('open', () => {
+    ICE = peer.options?.config?.iceServers || ICE;
+    const conn = peer.connect(hostId, { reliable: true, serialization: 'json' });
+    net.send = m => conn.open && conn.send(m);
+    net.close = () => { try { conn.close(); } catch {} try { peer.destroy(); } catch {} };
+    conn.on('open', () => { opened = true; conn.send({ type: 'join', name }); });
+    conn.on('data', m => onMsg(m));
+    conn.on('close', () => { if (myId && !leaving) leave('Админ закрыл комнату или пропала связь.'); });
+    setTimeout(() => { if (!opened) fail('Не удалось подключиться к комнате. Проверьте название и интернет.'); }, 15000);
   });
 }
 
-// Ассасин по таймлайну из ТЗ. a = секунды от появления.
-function applyAssassin(a) {
-  if (a < 0) { assassin.visible = false; return; }
-  assassin.visible = true;
-  assassin.position.copy(ASSASSIN_POS);
-  assassin.rotation.set(0, 0, 0);
-  const u = assassin.userData;
-
-  // 0.0–0.8: поворот головы к зрителю, капюшон на голове
-  if (a < 0.8) {
-    u.head.rotation.y = lerp(Math.PI * 0.6, 0, easeOut(clamp(a / 0.8)));
-    setPose(assassin, { crouch: 0.5, lean: 0.2 });
-    u.hood.position.y = 0.2;
-    blade.position.copy(BLADE_BACK.p);
-    blade.rotation.copy(BLADE_BACK.r);
-    blade.material.emissiveIntensity = 0;
-    setOpacity(assassin, 1);
-    return;
+async function onMsg(m) {
+  switch (m.type) {
+    case 'error': setErr(m.text); net.close(); break;
+    case 'welcome':
+      myId = m.id; isAdmin = m.admin; broadcast = m.broadcast;
+      info.set(myId, { id: myId, name: $('#name').value, admin: isAdmin, mic: micOn, cam: false });
+      $('#join').classList.add('hidden'); $('#app').classList.remove('hidden');
+      $('#rn').textContent = $('#room').value;
+      $('#bc').classList.toggle('hidden', !isAdmin); $('#muteall').classList.toggle('hidden', !isAdmin);
+      $('#rec').classList.toggle('hidden', !isAdmin); $('#madmin').classList.toggle('hidden', !isAdmin);
+      m.peers.forEach(p => { info.set(p.id, p); connect(p, true); });
+      applyBroadcast(); applyMusic(m.music); setRec(m.recording); render(); break;
+    case 'peer-joined': info.set(m.peer.id, m.peer); connect(m.peer, false); render(); break;
+    case 'peer-left': recSrc.get(m.id)?.disconnect(); recSrc.delete(m.id); peers.get(m.id)?.pc.close(); peers.delete(m.id); info.delete(m.id); render(); break;
+    case 'state': Object.assign(info.get(m.id) || {}, { mic: m.mic, cam: m.cam }); render(); break;
+    case 'signal': onSignal(m.from, m.data); break;
+    case 'music': applyMusic(m.music); break;
+    case 'recording': setRec(m.on); break;
+    case 'broadcast': broadcast = m.on; applyBroadcast(); break;
+    case 'force-mute': setMic(false); break;
+    case 'kicked': leave('Администратор исключил вас из комнаты.'); break;
   }
-
-  // 0.8–1.4: клинок выходит из-за спины в руку
-  if (a < 1.4) {
-    u.head.rotation.y = 0;
-    const k = easeInOut(clamp((a - 0.8) / 0.6));
-    blade.position.lerpVectors(BLADE_BACK.p, BLADE_HAND.p, k);
-    blade.rotation.set(lerp(BLADE_BACK.r.x, 0, k), 0, lerp(BLADE_BACK.r.z, 0, k));
-    setPose(assassin, { crouch: 0.5, lean: 0.2, armR: lerp(-0.2, 0.2, k) });
-    return;
-  }
-
-  // 1.4–2.0: быстрый росчерк у плеча, вспышка лезвия пиком на 1.7 с
-  if (a < 2.0) {
-    const k = easeInOut(clamp((a - 1.4) / 0.6));
-    setPose(assassin, { crouch: 0.5, lean: 0.2, armR: lerp(0.2, 1.1, k) });
-    blade.position.copy(BLADE_HAND.p);
-    blade.rotation.set(0, 0, 0);
-    const flash = Math.max(0, 1 - Math.abs(a - 1.7) / 0.18);
-    blade.material.emissiveIntensity = flash * 1.5;
-    return;
-  }
-
-  // 2.0–2.6: капюшон опускается, силуэт растворяется в тени
-  if (a < 2.6) {
-    const k = easeInOut(clamp((a - 2.0) / 0.6));
-    setPose(assassin, { crouch: 0.5, lean: 0.2, armR: lerp(1.1, 0.2, k) });
-    u.hood.position.y = lerp(0.2, -0.05, k);
-    blade.material.emissiveIntensity = 0;
-    const bump = Math.sin(k * Math.PI);
-    setOpacity(assassin, 1 - 0.7 * bump);
-    return;
-  }
-
-  // 2.6–3.0: возврат в исходную позу, клинок прячется
-  const k = easeInOut(clamp((a - 2.6) / 0.4));
-  u.hood.position.y = lerp(-0.05, 0.2, k);
-  u.head.rotation.y = 0;
-  setPose(assassin, { crouch: 0.5, lean: 0.2, armR: lerp(0.2, 0, k) });
-  blade.position.lerpVectors(BLADE_HAND.p, BLADE_BACK.p, k);
-  blade.rotation.set(lerp(0, BLADE_BACK.r.x, k), 0, lerp(0, BLADE_BACK.r.z, k));
-  setOpacity(assassin, 1);
 }
 
-let tick = 0;          // секунды внутри цикла
-let paused = false;
-const speeds = [0.5, 1, 2];
-let speedIdx = 1;
-let prevA = -Infinity;
-
-document.getElementById('play').onclick = e => {
-  paused = !paused;
-  e.target.textContent = paused ? 'Играть' : 'Пауза';
-};
-document.getElementById('speed').onclick = e => {
-  speedIdx = (speedIdx + 1) % speeds.length;
-  e.target.textContent = `Скорость x${speeds[speedIdx]}`;
-};
-
-let last = performance.now();
-
-function loop(now) {
-  requestAnimationFrame(loop);
-  const dt = (now - last) / 1000;
-  last = now;
-  if (!paused) {
-    tick += dt * speeds[speedIdx];
-    if (tick >= CYCLE) {
-      tick -= CYCLE;
-      prevA = -Infinity;
-      dust.forEach(d => scene.remove(d));
-      dust.length = 0;
-    }
+// --- WebRTC (mesh): новый участник звонит всем, кто уже в комнате ---
+function connect(p, initiator) {
+  const pc = new RTCPeerConnection({ iceServers: ICE });
+  const stream = new MediaStream();
+  const st = { pc, vt: null, at: null, stream, q: Promise.resolve() };
+  pc.ontrack = e => { stream.addTrack(e.track); if (e.track.kind === 'audio' && !tabRec) addRecSrc(p.id, stream); render(); };
+  pc.onicecandidate = e => e.candidate && send({ type: 'signal', to: p.id, data: { ice: e.candidate } });
+  if (initiator) {                                     // новый участник звонит всем, кто уже в комнате
+    const at = pc.addTransceiver('audio', { direction: 'sendrecv' }); st.at = at;
+    st.vt = pc.addTransceiver('video', { direction: 'sendrecv' });
+    if (micTrack) at.sender.replaceTrack(micTrack);
+    if (camTrack) st.vt.sender.replaceTrack(camTrack);
+    pc.onnegotiationneeded = async () => {
+      await pc.setLocalDescription();
+      send({ type: 'signal', to: p.id, data: { desc: pc.localDescription } });
+    };
   }
-
-  const a = tick - LEAD_IN;
-  applyZombies(tick, a);
-  applyAssassin(a);
-
-  // Пыль в момент появления, на рывке-росчерке и при падении зомби
-  if (prevA < 0 && a >= 0) spawnDust(ASSASSIN_POS, 8, 1.0);
-  if (prevA < 1.4 && a >= 1.4) spawnDust(ASSASSIN_POS, 4, 0.6);
-  if (prevA < ZOMBIE_DEATH && a >= ZOMBIE_DEATH) {
-    zombies.forEach((z, i) => spawnDust(ZOMBIE_POS[i], 8, 0.8));
-  }
-  prevA = a;
-
-  for (let i = dust.length - 1; i >= 0; i--) {
-    const d = dust[i];
-    d.userData.life--;
-    d.position.add(d.userData.v);
-    d.userData.v.y -= 0.003;
-    d.userData.v.multiplyScalar(0.96);
-    const k = Math.max(0, d.userData.life / d.userData.maxLife);
-    d.scale.setScalar(d.userData.s * (0.4 + 0.6 * k));
-    d.material.opacity = 0.6 * k;
-    if (d.userData.life <= 0) {
-      scene.remove(d);
-      d.material.dispose();
-      dust.splice(i, 1);
-    }
-  }
-
-  document.getElementById('info').textContent = `t = ${tick.toFixed(2)} с   ассасин: ${Math.max(0, a).toFixed(2)} с`;
-  renderer.render(scene, camera);
+  peers.set(p.id, st);
 }
-requestAnimationFrame(loop);
+// Сообщения обрабатываются строго по очереди для каждого собеседника (иначе ICE обгоняет описание сессии).
+function onSignal(from, d) {
+  const p = peers.get(from); if (!p) return;
+  p.q = p.q.then(() => handleSignal(p, from, d)).catch(e => console.warn(e));
+}
+async function handleSignal(p, from, d) {
+  if (d.desc) {
+    await p.pc.setRemoteDescription(d.desc);
+    if (d.desc.type === 'offer') {
+      // Принимающая сторона подключает свои микрофон и камеру к приёмникам, созданным из оффера, — и отвечает.
+      for (const t of p.pc.getTransceivers()) {
+        t.direction = 'sendrecv';
+        if (t.receiver.track.kind === 'audio') { p.at = t; if (micTrack) await t.sender.replaceTrack(micTrack); }
+        else { p.vt = t; if (camTrack) await t.sender.replaceTrack(camTrack); }
+      }
+      await p.pc.setLocalDescription();
+      send({ type: 'signal', to: from, data: { desc: p.pc.localDescription } });
+    }
+  } else if (d.ice) { try { await p.pc.addIceCandidate(d.ice); } catch {} }
+}
 
-addEventListener('resize', () => {
-  camera.aspect = innerWidth / innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(innerWidth, innerHeight);
-});
+// --- выбор устройств ---
+let micId = null, camId = null;
+const camConstraints = () => ({ width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 }, ...(camId ? { deviceId: { exact: camId } } : {}) });
+async function fillDevices() {
+  const list = await navigator.mediaDevices.enumerateDevices();
+  const fill = (sel, kind, cur, name) => {
+    sel.innerHTML = '';
+    list.filter(d => d.kind === kind).forEach((d, i) => {
+      const o = document.createElement('option');
+      o.value = d.deviceId; o.textContent = d.label || `${name} ${i + 1}`; o.selected = d.deviceId === cur; sel.append(o);
+    });
+    if (!sel.options.length) sel.innerHTML = '<option>не найдено</option>';
+  };
+  fill($('#micsel'), 'audioinput', micTrack?.getSettings().deviceId || micId, 'Микрофон');
+  fill($('#camsel'), 'videoinput', camTrack?.getSettings().deviceId || camId, 'Камера');
+}
+$('#dev').onclick = () => { const p = $('#devpanel'); p.classList.toggle('hidden'); if (!p.classList.contains('hidden')) fillDevices(); };
+navigator.mediaDevices.addEventListener('devicechange', () => !$('#devpanel').classList.contains('hidden') && fillDevices());
+$('#micsel').onchange = async e => {
+  const id = e.target.value;
+  try {
+    const s = await navigator.mediaDevices.getUserMedia({ audio: { deviceId: { exact: id }, echoCancellation: true, noiseSuppression: true } });
+    const t = s.getAudioTracks()[0], old = micTrack;
+    micId = id; micTrack = t;
+    if (!old) micOn = !(broadcast && !isAdmin);
+    t.enabled = micOn;
+    peers.forEach(p => p.at?.sender.replaceTrack(t));
+    old?.stop(); pushState(); updateButtons();
+  } catch { alert('Не удалось включить этот микрофон.'); fillDevices(); }
+};
+$('#camsel').onchange = async e => {
+  camId = e.target.value;
+  if (!camOn) return;                                  // камера выключена — выбранная включится при следующем включении
+  try {
+    const s = await navigator.mediaDevices.getUserMedia({ video: camConstraints() });
+    const t = s.getVideoTracks()[0], old = camTrack;
+    camTrack = t; peers.forEach(p => p.vt?.sender.replaceTrack(t)); old?.stop(); render();
+  } catch { alert('Не удалось включить эту камеру.'); fillDevices(); }
+};
+
+// --- микрофон / камера ---
+function setMic(on) {
+  if (!micTrack) on = false;
+  if (on && broadcast && !isAdmin) return;           // в эфире говорит только админ
+  micOn = on; if (micTrack) micTrack.enabled = on; recMic?.getAudioTracks().forEach(t => t.enabled = on);
+  pushState(); updateButtons();
+}
+async function setCam(on) {
+  if (on) {
+    try {
+      const s = await navigator.mediaDevices.getUserMedia({ video: camConstraints() });
+      camTrack = s.getVideoTracks()[0];
+    } catch { return alert('Нет доступа к камере.'); }
+  } else { camTrack?.stop(); camTrack = null; }
+  camOn = on;
+  peers.forEach(p => p.vt?.sender.replaceTrack(camTrack));
+  pushState(); updateButtons();
+}
+function pushState() {
+  Object.assign(info.get(myId), { mic: micOn, cam: camOn });
+  send({ type: 'state', mic: micOn, cam: camOn }); render();
+}
+function applyBroadcast() {
+  $('#banner').classList.toggle('hidden', !broadcast);
+  if (broadcast && !isAdmin) setMic(false);
+  $('#bc').classList.toggle('on', broadcast);
+  $('#bc').textContent = broadcast ? 'Остановить эфир' : 'Эфир администратора';
+  updateButtons();
+}
+function updateButtons() {
+  $('#mic').textContent = micOn ? 'Микрофон включён' : 'Микрофон выключен';
+  $('#mic').classList.toggle('off', !micOn);
+  $('#mic').disabled = (broadcast && !isAdmin) || !micTrack;
+  $('#cam').textContent = camOn ? 'Камера включена' : 'Камера выключена';
+  $('#cam').classList.toggle('off', !camOn);
+}
+$('#mic').onclick = () => setMic(!micOn);
+$('#cam').onclick = () => setCam(!camOn);
+$('#bc').onclick = () => send({ type: 'broadcast', on: !broadcast });
+$('#muteall').onclick = () => send({ type: 'mute-all' });
+$('#leave').onclick = () => leave();
+
+async function leave(msg) {
+  if (leaving) return; leaving = true;
+  if (rec) await stopRec();
+  peers.forEach(p => p.pc.close()); micTrack?.stop(); camTrack?.stop();
+  net.close();
+  if (msg) alert(msg);
+  setTimeout(() => location.reload(), 600);
+}
+
+// Качество видео в звонке: чем меньше людей, тем выше битрейт (в mesh видео уходит каждому отдельно).
+function applyVideoQuality() {
+  const n = peers.size, bps = n <= 3 ? 2500000 : n <= 8 ? 1200000 : 600000;
+  peers.forEach(async p => {
+    try {
+      const prm = p.vt.sender.getParameters();
+      if (!prm.encodings || !prm.encodings.length || prm.encodings[0].maxBitrate === bps) return;
+      prm.encodings[0].maxBitrate = bps; prm.degradationPreference = 'maintain-resolution';
+      await p.vt.sender.setParameters(prm);
+    } catch {}
+  });
+}
+setInterval(applyVideoQuality, 3000);
+
+// --- музыка с YouTube: админ выбирает трек, у всех играет синхронно ---
+let yt, ytReady = false, apiReady = false, music = null, curVid = null;
+const ytTag = document.createElement('script'); ytTag.src = 'https://www.youtube.com/iframe_api'; document.head.append(ytTag);
+window.onYouTubeIframeAPIReady = () => { apiReady = true; if (!$('#musicbar').classList.contains('hidden')) ensurePlayer(); };
+function ensurePlayer() {
+  if (yt || !apiReady) return;
+  yt = new YT.Player('yt', { width: 200, height: 113, playerVars: { playsinline: 1, controls: 0, disablekb: 1 },
+    events: { onReady: () => { ytReady = true; yt.setVolume(+$('#mvol').value); applyMusic(music); } } });
+}
+function applyMusic(m) {
+  music = m;
+  $('#musicbar').classList.toggle('hidden', !m && !isAdmin);
+  $('#mnow').textContent = !m ? 'Музыка не выбрана' : m.playing ? 'Играет музыка' : 'Музыка на паузе';
+  $('#mpause').textContent = m && !m.playing ? 'Продолжить' : 'Пауза';
+  if (m || isAdmin) ensurePlayer();
+  if (!ytReady) return;
+  if (!m) { yt.stopVideo(); curVid = null; return; }
+  if (m.videoId !== curVid) {
+    curVid = m.videoId;
+    const o = { videoId: m.videoId, startSeconds: m.time };
+    m.playing ? yt.loadVideoById(o) : yt.cueVideoById(o);
+  } else { yt.seekTo(m.time, true); m.playing ? yt.playVideo() : yt.pauseVideo(); }
+}
+const ytId = u => (u.match(/(?:v=|youtu\.be\/|embed\/|shorts\/)([\w-]{11})/) || [])[1];
+$('#mplay').onclick = () => {
+  const id = ytId($('#mlink').value);
+  if (!id) return alert('Вставьте ссылку на видео YouTube.');
+  send({ type: 'music', videoId: id, playing: true, time: 0 }); $('#mlink').value = '';
+};
+$('#mpause').onclick = () => music && send({ type: 'music', videoId: music.videoId, playing: !music.playing, time: ytReady ? yt.getCurrentTime() : music.time });
+$('#mstop').onclick = () => send({ type: 'music', videoId: null });
+$('#mvol').oninput = e => ytReady && yt.setVolume(+e.target.value);
+
+// --- запись всей комнаты в видео (mp4): плитки участников + все голоса ---
+// Файл пишется на сервере в папку записей (по умолчанию ~/VoiceHub-Records) — браузер ничего не скачивает.
+let rec = null, actx = null, dest = null, cvs = null, drawTimer = null, recChunks = [], recExt = 'webm';
+const recSrc = new Map();
+function addRecSrc(key, stream) {
+  if (!actx || recSrc.has(key) || !stream.getAudioTracks().length) return;
+  const s = actx.createMediaStreamSource(stream); s.connect(dest); recSrc.set(key, s);
+}
+function drawFrame() {
+  const c = cvs.getContext('2d'), W = cvs.width, H = cvs.height, g = 6;
+  c.fillStyle = '#12161d'; c.fillRect(0, 0, W, H);
+  if (tabVideo) {                                      // режим «вкладка»: кадр вкладки целиком
+    if (tabVideo.videoWidth) {
+      const k = Math.min(W / tabVideo.videoWidth, H / tabVideo.videoHeight), w = tabVideo.videoWidth * k, h = tabVideo.videoHeight * k;
+      c.drawImage(tabVideo, (W - w) / 2, (H - h) / 2, w, h);
+    }
+    return;
+  }
+  const list = [...info.values()], n = list.length;
+  const cols = Math.ceil(Math.sqrt(n * W / H)), rows = Math.ceil(n / cols), tw = W / cols, th = H / rows;
+  list.forEach((p, i) => {
+    const x = (i % cols) * tw + g, y = Math.floor(i / cols) * th + g, w = tw - 2 * g, h = th - 2 * g;
+    c.fillStyle = '#1b212b'; c.fillRect(x, y, w, h);
+    const v = document.querySelector(`#grid .tile[data-id="${p.id}"] video`);
+    if (p.cam && v && v.videoWidth) {
+      const k = Math.max(w / v.videoWidth, h / v.videoHeight), sw = w / k, sh = h / k;
+      c.drawImage(v, (v.videoWidth - sw) / 2, (v.videoHeight - sh) / 2, sw, sh, x, y, w, h);
+    } else {
+      const r = Math.min(w, h) / 6;
+      c.fillStyle = '#2b3441'; c.beginPath(); c.arc(x + w / 2, y + h / 2, r, 0, 7); c.fill();
+      c.fillStyle = '#e8ecf2'; c.font = `600 ${r}px sans-serif`; c.textAlign = 'center'; c.textBaseline = 'middle';
+      c.fillText((p.name || '?')[0].toUpperCase(), x + w / 2, y + h / 2);
+    }
+    const label = (p.admin ? '[админ] ' : '') + p.name + (p.mic ? '' : '  (микрофон выкл.)');
+    c.font = '16px sans-serif'; c.textAlign = 'left'; c.textBaseline = 'alphabetic';
+    c.fillStyle = 'rgba(0,0,0,.65)'; c.fillRect(x + 8, y + h - 34, c.measureText(label).width + 16, 26);
+    c.fillStyle = '#fff'; c.fillText(label, x + 16, y + h - 15);
+  });
+}
+let recTab = null, tabRec = false, tabVideo = null, recMic = null, meterTimer = null;
+// Индикатор уровня звука во время записи: сразу видно, пишется ли микрофон и звук вкладки.
+function startMeter() {
+  const an = k => { const n = recSrc.get(k); if (!n) return null; const a = actx.createAnalyser(); a.fftSize = 512; n.connect(a); return a; };
+  const A = { 'микрофон': an('me'), 'звук вкладки': an('tab') }, buf = new Float32Array(512);
+  const bars = a => {
+    if (!a) return 'нет';
+    a.getFloatTimeDomainData(buf); let s = 0; for (const x of buf) s += x * x;
+    const l = Math.min(5, Math.round(Math.sqrt(s / buf.length) * 40));
+    return '▮'.repeat(l) + '▯'.repeat(5 - l);
+  };
+  $('#recmeter').classList.remove('hidden');
+  meterTimer = setInterval(() => { $('#recmeter').textContent = Object.entries(A).map(([k, a]) => `${k}: ${bars(a)}`).join('   '); }, 250);
+}
+// Таймер в воркере: не тормозится, даже если вкладка в фоне — кадры идут ровно 25 в секунду.
+function startTicker(fn, ms) {
+  const w = new Worker(URL.createObjectURL(new Blob([`setInterval(() => postMessage(0), ${ms})`])));
+  w.onmessage = fn; return w;
+}
+function endCapture() {
+  clearInterval(meterTimer); $('#recmeter').classList.add('hidden');
+  drawTimer?.terminate(); drawTimer = null;
+  recTab?.getTracks().forEach(t => t.stop()); recTab = null;
+  recMic?.getTracks().forEach(t => t.stop()); recMic = null;
+  tabVideo = null; actx?.close(); recSrc.clear(); tabRec = false;
+}
+// Chrome: снимаем вкладку (картинка + весь её звук: голоса, музыка YouTube), микрофон пишем отдельно.
+// Safari и др.: запасной вариант — плитки участников и голоса (без YouTube).
+async function startRec() {
+  actx = new AudioContext({ sampleRate: 48000 }); dest = actx.createMediaStreamDestination();
+  try {
+    recTab = await navigator.mediaDevices.getDisplayMedia({
+      video: { frameRate: 25 },
+      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+      preferCurrentTab: true, selfBrowserSurface: 'include', systemAudio: 'exclude' });
+  } catch {}
+  await actx.resume();
+  cvs = document.createElement('canvas'); cvs.width = 1280; cvs.height = 720;
+  if (recTab && recTab.getAudioTracks().length) {
+    tabRec = true;
+    addRecSrc('tab', new MediaStream(recTab.getAudioTracks()));
+    const tv = recTab.getVideoTracks()[0], st = tv.getSettings();
+    if (st.width && st.height) {                       // качество записи = размер вкладки, но не больше Full HD
+      const k = Math.min(1, 1920 / st.width, 1080 / st.height);
+      cvs.width = Math.round(st.width * k / 2) * 2; cvs.height = Math.round(st.height * k / 2) * 2;
+    }
+    tv.onended = () => rec && $('#rec').click();       // нажали «Прекратить показ»
+    tabVideo = document.createElement('video'); tabVideo.muted = true; tabVideo.playsInline = true;
+    tabVideo.srcObject = new MediaStream([tv]); tabVideo.play().catch(() => {});
+  } else {
+    recTab?.getTracks().forEach(t => t.stop()); recTab = null;
+    alert('Звук вкладки не выбран — в записи будут только голоса, без музыки YouTube.\nОткройте VoiceHub в Chrome и в окне выбора оставьте включённым «Поделиться звуком вкладки».');
+    peers.forEach((p, id) => addRecSrc(id, p.stream));
+  }
+  // Микрофон для записи — отдельный, без эхоподавления: иначе при громкой музыке браузер «вырезает» ваш голос.
+  try {
+    recMic = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: true, autoGainControl: true } });
+    recMic.getAudioTracks().forEach(t => t.enabled = micOn);
+    addRecSrc('me', new MediaStream(recMic.getAudioTracks()));
+  } catch { if (micTrack) addRecSrc('me', new MediaStream([micTrack])); }
+  drawFrame(); drawTimer = startTicker(drawFrame, 40);
+  const out = new MediaStream([cvs.captureStream(25).getVideoTracks()[0], ...dest.stream.getAudioTracks()]);
+  // mp4 только с H.264+AAC (без указания кодеков Chrome пишет VP9+Opus — QuickTime такое не воспроизводит: нет звука и картинки)
+  const mime = ['video/mp4;codecs=avc1,mp4a.40.2', 'video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/mp4;codecs=avc1.64001F,mp4a.40.2',
+    'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'].find(t => MediaRecorder.isTypeSupported(t));
+  try { rec = new MediaRecorder(out, { mimeType: mime, videoBitsPerSecond: 4000000, audioBitsPerSecond: 192000 }); }
+  catch { endCapture(); alert('Браузер не умеет записывать видео. Используйте Chrome.'); return null; }
+  recChunks = []; rec.ondataavailable = e => { if (e.data.size) recChunks.push(e.data); };
+  rec.start(1000); startMeter();
+  recExt = rec.mimeType.includes('mp4') ? 'mp4' : 'webm';
+  return recExt;
+}
+function stopRec() {
+  return new Promise(res => {
+    rec.onstop = () => {
+      const type = rec.mimeType || 'video/webm', a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob(recChunks, { type }));
+      a.download = `voicehub-${$('#room').value}-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.${recExt}`;
+      document.body.append(a); a.click(); setTimeout(() => { a.remove(); URL.revokeObjectURL(a.href); }, 5000);
+      recChunks = []; endCapture(); rec = null; res();
+    };
+    rec.stop();
+  });
+}
+function setRec(on) {
+  $('#recbanner').classList.toggle('hidden', !on);
+  $('#rec').classList.toggle('off', !!rec);
+  $('#rec').textContent = rec ? 'Остановить запись' : 'Запись';
+}
+$('#rec').onclick = async () => {
+  if (!rec) { const ext = await startRec(); if (ext) send({ type: 'recording', on: true, ext }); }
+  else { await stopRec(); send({ type: 'recording', on: false }); }
+};
+
+// --- интерфейс ---
+function render() {
+  const grid = $('#grid'); grid.innerHTML = '';
+  $('#count').textContent = `${info.size} / 20`;
+  info.forEach(p => {
+    const me = p.id === myId, peer = peers.get(p.id);
+    const t = document.createElement('div');
+    t.className = 'tile' + (p.cam ? ' cam' : ''); t.dataset.id = p.id;
+    const v = document.createElement('video');
+    v.autoplay = true; v.playsInline = true; v.muted = me;
+    v.srcObject = me ? new MediaStream(camTrack ? [camTrack] : []) : peer?.stream;
+    t.append(v);
+    t.insertAdjacentHTML('beforeend',
+      `<div class="av">${(p.name || '?')[0].toUpperCase()}</div>
+       <div class="label">${p.admin ? '<span class="tag">админ</span>' : ''}<span>${esc(p.name)}${me ? ' (вы)' : ''}</span>
+       <span class="${p.mic ? '' : 'muted-ic'}">${p.mic ? '🎙' : '🔇'}</span></div>`);
+    if (isAdmin && !me) {
+      const a = document.createElement('div'); a.className = 'adm';
+      a.innerHTML = '<button data-c="mute">Заглушить</button><button data-c="kick">Исключить</button>';
+      a.onclick = e => e.target.dataset.c && send({ type: e.target.dataset.c, to: p.id });
+      t.append(a);
+    }
+    grid.append(t);
+  });
+}
+const esc = s => s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 </script>
 </body>
 </html>
