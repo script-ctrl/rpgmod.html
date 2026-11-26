@@ -29,8 +29,9 @@ header{display:flex;align-items:center;gap:12px;padding:10px 16px;border-bottom:
 header b{font-size:16px}
 #count{color:var(--dim)}
 #banner{margin-left:auto;background:var(--accent);color:#fff;border-radius:6px;padding:3px 10px;font-size:13px}
-#grid{flex:1;min-height:0;display:grid;gap:10px;padding:12px;overflow:auto;align-content:center;
-  grid-template-columns:repeat(auto-fit,minmax(min(100%,230px),1fr))}
+#grid{flex:1;min-height:0;display:grid;gap:10px;padding:12px;overflow:auto;align-content:start;
+  grid-template-columns:repeat(auto-fit,minmax(min(100%,230px),1fr));
+  grid-auto-rows:minmax(140px,auto)}
 .tile{position:relative;aspect-ratio:16/10;background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden;display:grid;place-items:center}
 .tile.speaking{border-color:var(--ok);box-shadow:0 0 0 1px var(--ok)}
 .tile video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
@@ -115,8 +116,8 @@ footer button:disabled{opacity:.4;cursor:not-allowed}
 <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <script>
 const $ = s => document.querySelector(s);
-// Данные из личного кабинета Metered (TURN Server -> Credentials). Хост обычно global.relay.metered.ca
-const TURN_HOST = 'standard.relay.metered.ca', TURN_USER = '7938126a7de417ff90500854', TURN_PASS = 'gxxL7QysHjrrwUF/';
+// Данные из личного кабинета Metered (TURN Server -> Credentials).
+const TURN_HOST = 'standard.relay.metered.ca', TURN_USER = 'ВАШ_ЛОГИН', TURN_PASS = 'ВАШ_ПАРОЛЬ';
 const TURN = [
   { urls: 'stun:stun.relay.metered.ca:80' },
   { urls: 'turn:' + TURN_HOST + ':80', username: TURN_USER, credential: TURN_PASS },
@@ -129,6 +130,13 @@ let myId, isAdmin = false, broadcast = false, leaving = false;
 let micTrack = null, camTrack = null, micOn = true, camOn = false;
 const peers = new Map(); // id -> {pc, vt, stream, name, admin, mic, cam}
 const info = new Map();  // id -> данные участника (включая себя)
+
+// Не даём экрану админа гаснуть, пока он держит комнату открытой — иначе браузер-«хаб» замирает и комната рушится у всех.
+let wakeLock = null;
+async function keepAwake() {
+  try { wakeLock = await navigator.wakeLock.request('screen'); } catch {}
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && isAdmin) keepAwake(); });
 
 // --- Связь без своего сервера: бесплатный облачный сигналинг PeerJS. Админ = «хаб» комнаты прямо в его браузере ---
 const MAX = 20;
@@ -160,6 +168,7 @@ const hubAll = m => hub.clients.forEach(c => hubSend(c, m));
 const musicNow = () => hub.music && { videoId: hub.music.videoId, playing: hub.music.playing,
   time: hub.music.time + (hub.music.playing ? (Date.now() - hub.music.at) / 1000 : 0) };
 function hubJoin(c) {
+  c.lastSeen = Date.now();
   hubSend(c, { type: 'welcome', id: c.id, admin: c.admin, broadcast: hub.broadcast, recording: hub.recording,
     music: musicNow(), peers: [...hub.clients.values()].map(pub) });
   hub.clients.forEach(o => hubSend(o, { type: 'peer-joined', peer: pub(c) }));
@@ -170,6 +179,7 @@ function hubLeave(c) {
   hubAll({ type: 'peer-left', id: c.id });
 }
 function hubHandle(c, m) {
+  c.lastSeen = Date.now();                              // пульс/любое сообщение продлевает «жизнь» клиента
   if (m.type === 'signal') { const t = hub.clients.get(m.to); t && hubSend(t, { type: 'signal', from: c.id, data: m.data }); }
   else if (m.type === 'state') {
     c.mic = !!m.mic; c.cam = !!m.cam;
@@ -200,6 +210,7 @@ function startHost(hostId, name) {
     try { peer.destroy(); } catch {}
   });
   peer.on('open', () => {
+    keepAwake();
     const me = { id: String(hub.next++), name, admin: true, mic: micOn, cam: false, local: true };
     net.send = m => hubHandle(me, m);
     net.close = () => { try { peer.destroy(); } catch {} };
@@ -215,6 +226,15 @@ function startHost(hostId, name) {
       conn.on('close', () => c && hubLeave(c));
     });
     hubJoin(me);
+    setInterval(() => {                                 // сторож: убираем тех, кто молчит дольше 15 сек (призраки)
+      const now = Date.now();
+      hub.clients.forEach(c => {
+        if (!c.local && now - (c.lastSeen || now) > 15000) {
+          try { c.conn.close(); } catch {}
+          hubLeave(c);
+        }
+      });
+    }, 5000);
   });
 }
 function startGuest(hostId, name) {
@@ -228,7 +248,21 @@ function startGuest(hostId, name) {
     net.close = () => { try { conn.close(); } catch {} try { peer.destroy(); } catch {} };
     conn.on('open', () => { opened = true; conn.send({ type: 'join', name }); });
     conn.on('data', m => onMsg(m));
-    conn.on('close', () => { if (myId && !leaving) leave('Админ закрыл комнату или пропала связь.'); });
+    conn.on('close', () => {
+      if (!myId || leaving) return;
+      // Короткий обрыв (блок экрана, смена сети) не должен сразу выкидывать — пробуем переподключиться несколько раз.
+      let tries = 0;
+      const retry = setInterval(() => {
+        if (leaving) return clearInterval(retry);
+        tries++;
+        const c2 = peer.connect(hostId, { reliable: true, serialization: 'json' });
+        net.send = m => c2.open && c2.send(m);
+        c2.on('open', () => { clearInterval(retry); c2.send({ type: 'join', name }); });
+        c2.on('data', m => onMsg(m));
+        c2.on('close', () => { if (myId && !leaving && tries >= 5) { clearInterval(retry); leave('Админ закрыл комнату или пропала связь.'); } });
+        if (tries >= 5) { clearInterval(retry); leave('Админ закрыл комнату или пропала связь.'); }
+      }, 2000);
+    });
     setTimeout(() => { if (!opened) fail('Не удалось подключиться к комнате. Проверьте название и интернет.'); }, 15000);
   });
 }
@@ -403,6 +437,9 @@ function applyVideoQuality() {
   });
 }
 setInterval(applyVideoQuality, 3000);
+
+// Пульс присутствия: каждый клиент раз в 5 сек. сообщает хабу, что он жив (используется для чистки «призраков»).
+setInterval(() => { if (myId) send({ type: 'ping' }); }, 5000);
 
 // --- музыка с YouTube: админ выбирает трек, у всех играет синхронно ---
 let yt, ytReady = false, apiReady = false, music = null, curVid = null;
